@@ -12,8 +12,8 @@ object TransferEngine {
 
   fun buildScript(p: Plan): String {
 
-    val src = "/data/data/${p.sourcePkg}"
-    val dst = "/data/data/${p.targetPkg}"
+    val src = "/data/user/0/${p.sourcePkg}"
+    val dst = "/data/user/0/${p.targetPkg}"
 
     val folders = when (p.mode) {
       Mode.FULL -> listOf("files", "databases", "shared_prefs")
