@@ -6,6 +6,20 @@ import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
 
+    private fun normalizePkg(raw: String): String {
+        // Spinner item bazen "label\n(pkg)" veya "pkg (Label)" gibi gelebilir.
+        val t = raw.trim()
+            .replace("\r", " ")
+            .replace("\n", " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        // "(...)" varsa öncesini al
+        return t.substringBefore("(", t).trim()
+    }
+
+
+
   private lateinit var tvRoot: TextView
   private lateinit var tvLog: TextView
   private lateinit var btnScan: Button
