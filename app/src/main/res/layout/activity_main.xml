@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:padding="16dp">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <TextView
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:text="🦊 FirefoxTransfer"
+      android:textStyle="bold"
+      android:textSize="24sp"
+      android:gravity="center"
+      android:layout_marginBottom="12dp"/>
+
+    <TextView
+      android:id="@+id/tvRoot"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:text="Root: kontrol ediliyor..."
+      android:padding="10dp"
+      android:layout_marginBottom="12dp"/>
+
+    <Button
+      android:id="@+id/btnScan"
+      android:layout_width="match_parent"
+      android:layout_height="48dp"
+      android:text="🔎 Tarayıcıları Tara"
+      android:layout_marginBottom="12dp"/>
+
+    <TextView
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:text="Kaynak"
+      android:textStyle="bold"/>
+
+    <Spinner
+      android:id="@+id/spSource"
+      android:layout_width="match_parent"
+      android:layout_height="48dp"
+      android:layout_marginBottom="6dp"/>
+
+    <EditText
+      android:id="@+id/etSource"
+      android:layout_width="match_parent"
+      android:layout_height="48dp"
+      android:hint="Kaynak paket (opsiyonel)"
+      android:layout_marginBottom="12dp"/>
+
+    <TextView
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:text="Hedef"
+      android:textStyle="bold"/>
+
+    <Spinner
+      android:id="@+id/spTarget"
+      android:layout_width="match_parent"
+      android:layout_height="48dp"
+      android:layout_marginBottom="6dp"/>
+
+    <EditText
+      android:id="@+id/etTarget"
+      android:layout_width="match_parent"
+      android:layout_height="48dp"
+      android:hint="Hedef paket (opsiyonel)"
+      android:layout_marginBottom="12dp"/>
+
+    <RadioGroup
+      android:id="@+id/rgMode"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginBottom="12dp">
+
+      <RadioButton
+        android:id="@+id/rbProfile"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:checked="true"
+        android:text="Profil (yer imleri/çerez/oturum/şifre)"/>
+
+      <RadioButton
+        android:id="@+id/rbFull"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Tam (kritik klasörleri kopyala)"/>
+    </RadioGroup>
+
+    <Button
+      android:id="@+id/btnBackup"
+      android:layout_width="match_parent"
+      android:layout_height="48dp"
+      android:text="💾 Sadece Hedefi Yedekle"
+      android:layout_marginBottom="10dp"/>
+
+    <Button
+      android:id="@+id/btnTransfer"
+      android:layout_width="match_parent"
+      android:layout_height="56dp"
+      android:text="🔄 Transfer"
+      android:textStyle="bold"
+      android:textSize="18sp"
+      android:layout_marginBottom="12dp"/>
+
+    <TextView
+      android:id="@+id/tvLog"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:text="Hazır."
+      android:textIsSelectable="true"
+      android:fontFamily="monospace"
+      android:padding="10dp"/>
+  </LinearLayout>
+</ScrollView>
