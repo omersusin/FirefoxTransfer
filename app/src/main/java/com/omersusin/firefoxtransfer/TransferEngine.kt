@@ -47,16 +47,16 @@ object TransferEngine {
       if [ ! -d "$dst" ]; then echo "ERROR: target missing"; exit 21; fi
 
       BACKUP="/sdcard/FirefoxTransfer_Backups/${p.targetPkg}_$(date +%Y%m%d_%H%M%S)"
-      mkdir -p "$BACKUP"
-      cp -a "$dst/databases" "$BACKUP/" 2>/dev/null || true
-      cp -a "$dst/shared_prefs" "$BACKUP/" 2>/dev/null || true
-      cp -a "$dst/files" "$BACKUP/" 2>/dev/null || true
+      mkdir -p "${'$'}BACKUP"
+      cp -a "$dst/databases" "${'$'}BACKUP/" 2>/dev/null || true
+      cp -a "$dst/shared_prefs" "${'$'}BACKUP/" 2>/dev/null || true
+      cp -a "$dst/files" "${'$'}BACKUP/" 2>/dev/null || true
       echo "BACKUP_OK"
 
       $copyBlock
 
       OWNER="$(stat -c '%u:%g' "$dst" 2>/dev/null || true)"
-      if [ -n "$OWNER" ]; then chown -R "$OWNER" "$dst" 2>/dev/null || true; fi
+      if [ -n "${'$'}OWNER" ]; then chown -R "${'$'}OWNER" "$dst" 2>/dev/null || true; fi
 
       restorecon -R "$dst" 2>/dev/null || true
 
