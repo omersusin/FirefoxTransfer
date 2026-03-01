@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="background">#F5F5F5</color>
+    <color name="card_header">#1565C0</color>
+    <color name="white">#FFFFFF</color>
+    <color name="white_70">#B3FFFFFF</color>
+    <color name="text_primary">#212121</color>
+    <color name="text_secondary">#757575</color>
+    <color name="card_stroke">#E0E0E0</color>
+    <color name="selected_stroke">#1565C0</color>
+    <color name="log_background">#FAFAFA</color>
+    <color name="badge_firefox">#FF6611</color>
+    <color name="badge_chromium">#4285F4</color>
+</resources>

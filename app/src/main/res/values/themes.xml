@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-  <style name="Theme.FirefoxTransfer" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
-    <item name="colorPrimary">#FF6611</item>
-    <item name="colorPrimaryVariant">#E05500</item>
-    <item name="colorSecondary">#FF9500</item>
-  </style>
+    <style name="Theme.BrowserDataMover" parent="Theme.Material3.Light.NoActionBar">
+        <item name="colorPrimary">#1565C0</item>
+        <item name="colorPrimaryDark">#0D47A1</item>
+        <item name="colorAccent">#2196F3</item>
+    </style>
 </resources>

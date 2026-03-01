@@ -2,37 +2,47 @@ name: Build APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+    - name: Setup Gradle
+      uses: gradle/gradle-build-action@v3
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.5"
+    - name: Generate Gradle Wrapper
+      run: |
+        gradle wrapper --gradle-version 8.6
 
-      - name: Build Debug APK
-        run: |
-          gradle --version
-          gradle clean :app:assembleDebug --stacktrace --info --console=plain --warning-mode all
+    - name: Make gradlew executable
+      run: chmod +x gradlew
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: FirefoxTransfer-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+    - name: Build Debug APK
+      run: ./gradlew assembleDebug
+
+    - name: Build Release APK
+      run: ./gradlew assembleRelease
+
+    - name: Upload Debug APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: BrowserDataMover-debug
+        path: app/build/outputs/apk/debug/*.apk
+
+    - name: Upload Release APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: BrowserDataMover-release
+        path: app/build/outputs/apk/release/*.apk
