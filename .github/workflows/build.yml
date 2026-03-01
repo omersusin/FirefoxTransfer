@@ -29,15 +29,6 @@ jobs:
       run: |
         gradle wrapper --gradle-version 8.6
         chmod +x gradlew
-        
-        # If gradlew or wrapper jar was missing/corrupted, commit them once
-        if [ ! -z "$(git status --porcelain gradle/ wrapper/ gradlew)" ]; then
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add gradle/ gradlew
-          git commit -m "Restore missing/corrupted Gradle wrapper files"
-          git push || echo "Push failed, continuing build..."
-        fi
 
     - name: Prepare Keystore
       run: |
@@ -51,13 +42,6 @@ jobs:
             -storepass browsermover123 \
             -keypass browsermover123 \
             -dname "CN=BrowserDataMover, OU=Dev, O=Dev, L=Unknown, ST=Unknown, C=TR"
-          
-          # Commit the keystore so it becomes permanent
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add app/keystore.jks
-          git commit -m "Add permanent keystore for consistent APK signing"
-          git push
         fi
 
     - name: Build APKs

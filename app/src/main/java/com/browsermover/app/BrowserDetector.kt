@@ -87,8 +87,7 @@ class BrowserDetector(private val context: Context) {
 
                 // Default to UNKNOWN type, user can still try manual
                 val type = BrowserType.UNKNOWN
-                // Removed the filter check for UNKNOWN so they always show up
-                // if (filterType != null && type != filterType) continue
+                if (filterType != null && type != filterType) continue
 
                 installed.add(BrowserInfo("$appName (Detected)", pkg, type, true))
             }
@@ -101,7 +100,7 @@ class BrowserDetector(private val context: Context) {
 
     fun getCompatibleTargets(source: BrowserInfo, allBrowsers: List<BrowserInfo>): List<BrowserInfo> {
         return allBrowsers.filter {
-            it.packageName != source.packageName && (it.type == source.type || it.type == BrowserType.UNKNOWN || source.type == BrowserType.UNKNOWN)
+            it.packageName != source.packageName && it.type == source.type
         }
     }
 
