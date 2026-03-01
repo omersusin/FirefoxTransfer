@@ -9,10 +9,6 @@ import java.util.concurrent.TimeUnit
 
 class DataMover {
 
-    companion object {
-        private const val BACKUP_DIR = "/sdcard/BrowserDataMover/backups"
-    }
-
     interface ProgressListener {
         fun onProgress(message: String)
         fun onSuccess(message: String)
@@ -29,198 +25,247 @@ class DataMover {
     ) {
         Thread {
             try {
-                postProgress(listener, "Starting transfer...")
-                postProgress(listener, "From: ${source.name} (${source.packageName})")
-                postProgress(listener, "To: ${target.name} (${target.packageName})")
-
                 val srcPkg = source.packageName
                 val dstPkg = target.packageName
 
-                // ALL commands in ONE su session
-                val process = Runtime.getRuntime().exec("su")
+                postProgress(listener, "Transfer: ${source.name} -> ${target.name}")
+
+                postProgress(listener, "Detecting root method...")
+                if (!RootHelper.isRootAvailable()) {
+                    postError(listener, "Root access not found!")
+                    return@Thread
+                }
+                val suMethodName = RootHelper.getSuMethodName()
+                postProgress(listener, "Root method: $suMethodName")
+
+                // Build script
+                val script = buildScript(srcPkg, dstPkg, backupFirst)
+
+                postProgress(listener, "Executing transfer script...")
+
+                // Execute in single su session
+                val suMethod = RootHelper.getSuMethod()
+                val process = Runtime.getRuntime().exec(suMethod)
                 val os = DataOutputStream(process.outputStream)
 
-                fun w(s: String) = os.writeBytes(s + "\n")
-
-                // ---- Find source dir ----
-                w("echo STEP_FIND_SRC")
-                w("SRC_DIR=\"\"")
-                w("for d in /data/user/0/$srcPkg /data/data/$srcPkg; do")
-                w("  if [ -d \"\$d\" ]; then SRC_DIR=\"\$d\"; break; fi")
-                w("done")
-                w("echo SRCDIR=\$SRC_DIR")
-
-                // ---- Find target dir ----
-                w("echo STEP_FIND_DST")
-                w("DST_DIR=\"\"")
-                w("for d in /data/user/0/$dstPkg /data/data/$dstPkg; do")
-                w("  if [ -d \"\$d\" ]; then DST_DIR=\"\$d\"; break; fi")
-                w("done")
-                w("echo DSTDIR=\$DST_DIR")
-
-                // ---- Validate ----
-                w("if [ -z \"\$SRC_DIR\" ]; then echo ERROR_NO_SRC; exit 1; fi")
-                w("if [ -z \"\$DST_DIR\" ]; then echo ERROR_NO_DST; exit 1; fi")
-
-                // ---- Show source contents (debug) ----
-                w("echo SRC_CONTENT_START")
-                w("ls \$SRC_DIR/ 2>&1 | head -20")
-                w("echo SRC_CONTENT_END")
-
-                // ---- Get owner BEFORE any changes ----
-                w("echo STEP_GET_OWNER")
-                w("UGROUP=\$(ls -ld \$DST_DIR | awk '{print \$3}')")
-                w("UGROUPG=\$(ls -ld \$DST_DIR | awk '{print \$4}')")
-                w("echo OWNER=\$UGROUP:\$UGROUPG")
-
-                // ---- If owner is root or empty, try dumpsys ----
-                w("if [ -z \"\$UGROUP\" ] || [ \"\$UGROUP\" = \"root\" ]; then")
-                w("  DUMP_UID=\$(dumpsys package $dstPkg | grep 'userId=' | head -1 | sed 's/.*userId=//' | sed 's/[^0-9].*//')")
-                w("  if [ -n \"\$DUMP_UID\" ]; then")
-                w("    CALC=\$((\$DUMP_UID - 10000))")
-                w("    UGROUP=\"u0_a\$CALC\"")
-                w("    UGROUPG=\"u0_a\$CALC\"")
-                w("    echo OWNER_FROM_DUMP=\$UGROUP")
-                w("  fi")
-                w("fi")
-
-                // ---- Stop both apps ----
-                w("echo STEP_STOP")
-                w("am force-stop $srcPkg 2>/dev/null")
-                w("am force-stop $dstPkg 2>/dev/null")
-                w("sleep 2")
-
-                // ---- Backup ----
-                if (backupFirst) {
-                    w("echo STEP_BACKUP")
-                    w("mkdir -p $BACKUP_DIR")
-                    w("TS=\$(date +%s)")
-                    w("tar -czf $BACKUP_DIR/${dstPkg}_\$TS.tar.gz -C \$DST_DIR . 2>/dev/null && echo BACKUP_OK || echo BACKUP_FAIL")
-                }
-
-                // ---- Clear target ----
-                w("echo STEP_CLEAR")
-                w("rm -rf \$DST_DIR/*")
-
-                // ---- Copy data ----
-                w("echo STEP_COPY")
-                w("cp -a \$SRC_DIR/* \$DST_DIR/ 2>&1 | tail -5")
-                w("echo COPY_DONE")
-
-                // ---- Fix ownership ----
-                w("echo STEP_CHOWN")
-                w("if [ -n \"\$UGROUP\" ] && [ \"\$UGROUP\" != \"root\" ]; then")
-                w("  chown -R \$UGROUP:\$UGROUPG \$DST_DIR")
-                w("  echo CHOWN_OK=\$UGROUP")
-                w("else")
-                w("  echo CHOWN_SKIP")
-                w("fi")
-
-                // ---- SELinux ----
-                w("echo STEP_SELINUX")
-                w("restorecon -RF \$DST_DIR 2>/dev/null")
-
-                // ---- Verify ----
-                w("echo STEP_VERIFY")
-                w("echo DST_CONTENT_START")
-                w("ls \$DST_DIR/ 2>&1 | head -15")
-                w("echo DST_CONTENT_END")
-
-                w("echo TRANSFER_COMPLETE")
-                w("exit")
+                os.writeBytes(script)
+                os.writeBytes("exit\n")
                 os.flush()
                 os.close()
 
-                // Read output
                 val stdout = BufferedReader(InputStreamReader(process.inputStream))
                 val stderr = BufferedReader(InputStreamReader(process.errorStream))
+
                 val output = stdout.readText()
                 val error = stderr.readText()
+
                 stdout.close()
                 stderr.close()
                 process.waitFor(180, TimeUnit.SECONDS)
 
-                // Parse output
-                var srcDir = ""
-                var dstDir = ""
-                val srcFiles = mutableListOf<String>()
-                val dstFiles = mutableListOf<String>()
-                var inSrcContent = false
-                var inDstContent = false
-
-                for (line in output.lines()) {
-                    if (line.isBlank()) continue
-
-                    when {
-                        line.startsWith("SRCDIR=") -> {
-                            srcDir = line.removePrefix("SRCDIR=")
-                            postProgress(listener, "Source: $srcDir")
-                        }
-                        line.startsWith("DSTDIR=") -> {
-                            dstDir = line.removePrefix("DSTDIR=")
-                            postProgress(listener, "Target: $dstDir")
-                        }
-                        line == "ERROR_NO_SRC" -> {
-                            postError(listener,
-                                "Source data directory not found!\n\n" +
-                                "Package: $srcPkg\n\n" +
-                                "Please open ${source.name} at least once first.")
-                            return@Thread
-                        }
-                        line == "ERROR_NO_DST" -> {
-                            postError(listener,
-                                "Target data directory not found!\n\n" +
-                                "Package: $dstPkg\n\n" +
-                                "Please open ${target.name} once, close it, then try again.")
-                            return@Thread
-                        }
-                        line == "SRC_CONTENT_START" -> inSrcContent = true
-                        line == "SRC_CONTENT_END" -> {
-                            inSrcContent = false
-                            postProgress(listener, "Source data (${srcFiles.size} items): ${srcFiles.take(5).joinToString(", ")}")
-                        }
-                        inSrcContent -> srcFiles.add(line)
-                        line.startsWith("OWNER=") -> postProgress(listener, "Original owner: ${line.removePrefix("OWNER=")}")
-                        line.startsWith("OWNER_FROM_DUMP=") -> postProgress(listener, "Owner via UID: ${line.removePrefix("OWNER_FROM_DUMP=")}")
-                        line == "STEP_STOP" -> postProgress(listener, "Stopping browsers...")
-                        line == "STEP_BACKUP" -> postProgress(listener, "Creating backup...")
-                        line == "BACKUP_OK" -> postProgress(listener, "✅ Backup saved")
-                        line == "BACKUP_FAIL" -> postProgress(listener, "⚠️ Backup failed, continuing...")
-                        line == "STEP_CLEAR" -> postProgress(listener, "Clearing target...")
-                        line == "STEP_COPY" -> postProgress(listener, "Copying data... (please wait)")
-                        line == "COPY_DONE" -> postProgress(listener, "Copy complete")
-                        line == "STEP_CHOWN" -> postProgress(listener, "Fixing ownership...")
-                        line.startsWith("CHOWN_OK=") -> postProgress(listener, "✅ Owner set: ${line.removePrefix("CHOWN_OK=")}")
-                        line == "CHOWN_SKIP" -> postProgress(listener, "⚠️ Could not determine owner")
-                        line == "STEP_SELINUX" -> postProgress(listener, "Fixing SELinux...")
-                        line == "DST_CONTENT_START" -> inDstContent = true
-                        line == "DST_CONTENT_END" -> {
-                            inDstContent = false
-                            postProgress(listener, "Target after transfer (${dstFiles.size} items): ${dstFiles.take(5).joinToString(", ")}")
-                        }
-                        inDstContent -> dstFiles.add(line)
-                        line == "TRANSFER_COMPLETE" -> {
-                            postSuccess(listener,
-                                "Transfer successful!\n\n" +
-                                "From: ${source.name}\n($srcDir)\n\n" +
-                                "To: ${target.name}\n($dstDir)\n\n" +
-                                "You can now open ${target.name}.")
-                            return@Thread
-                        }
-                    }
-                }
-
-                if (!output.contains("TRANSFER_COMPLETE")) {
-                    postError(listener,
-                        "Transfer may have failed.\n\n" +
-                        "Shell output:\n${output.take(1500)}\n\n" +
-                        "Errors:\n${error.take(500)}")
-                }
+                // Parse and report
+                parseOutput(output, error, source, target, listener)
 
             } catch (e: Exception) {
                 postError(listener, "Error: ${e.message}")
             }
         }.start()
+    }
+
+    private fun buildScript(srcPkg: String, dstPkg: String, backup: Boolean): String {
+        return buildString {
+            appendLine("echo STEP=Debug")
+            appendLine("echo \"ROOT_ID=\$(id)\"")
+            appendLine("echo \"SELINUX=\$(getenforce 2>/dev/null || echo unknown)\"")
+            appendLine("")
+
+            // Find source
+            appendLine("echo STEP=Finding_source")
+            appendLine("SRCDIR=\"\"")
+            appendLine("if [ -d \"/data/data/$srcPkg\" ]; then SRCDIR=\"/data/data/$srcPkg\"; elif [ -d \"/data/user/0/$srcPkg\" ]; then SRCDIR=\"/data/user/0/$srcPkg\"; fi")
+            appendLine("echo \"SRCDIR=\$SRCDIR\"")
+            appendLine("")
+
+            // Validate source
+            appendLine("if [ -z \"\$SRCDIR\" ]; then")
+            appendLine("  echo \"ERROR=Source not found\"")
+            appendLine("  echo \"DEBUG_DATA_DATA=\$(ls /data/data/ 2>&1 | grep -i moz | head -10)\"")
+            appendLine("  echo \"DEBUG_USER_0=\$(ls /data/user/0/ 2>&1 | grep -i moz | head -10)\"")
+            appendLine("  echo \"DEBUG_PM=\$(pm path $srcPkg 2>&1)\"")
+            appendLine("  exit 1")
+            appendLine("fi")
+            appendLine("")
+
+            // Source content check
+            appendLine("echo \"SRC_FILES=\$(ls \$SRCDIR/ 2>/dev/null | head -10)\"")
+            appendLine("")
+
+            // Find target
+            appendLine("echo STEP=Finding_target")
+            appendLine("DSTDIR=\"\"")
+            appendLine("if [ -d \"/data/data/$dstPkg\" ]; then DSTDIR=\"/data/data/$dstPkg\"; elif [ -d \"/data/user/0/$dstPkg\" ]; then DSTDIR=\"/data/user/0/$dstPkg\"; fi")
+            appendLine("echo \"DSTDIR=\$DSTDIR\"")
+            appendLine("")
+
+            // Validate target
+            appendLine("if [ -z \"\$DSTDIR\" ]; then")
+            appendLine("  echo \"ERROR=Target not found\"")
+            appendLine("  exit 1")
+            appendLine("fi")
+            appendLine("")
+
+            // Get owner BEFORE any changes
+            appendLine("echo STEP=Getting_owner")
+            appendLine("UGROUP=\$(ls -ld \"\$DSTDIR\" | awk '{print \$3}')")
+            appendLine("UGROUPG=\$(ls -ld \"\$DSTDIR\" | awk '{print \$4}')")
+            appendLine("echo \"OWNER=\$UGROUP:\$UGROUPG\"")
+            appendLine("")
+
+            // Fallback: get owner from dumpsys
+            appendLine("if [ -z \"\$UGROUP\" ] || [ \"\$UGROUP\" = \"root\" ]; then")
+            appendLine("  DUMP_UID=\$(dumpsys package $dstPkg | grep 'userId=' | head -1 | sed 's/.*userId=//' | sed 's/[^0-9].*//')")
+            appendLine("  if [ -n \"\$DUMP_UID\" ]; then")
+            appendLine("    CALC=\$((\$DUMP_UID - 10000))")
+            appendLine("    UGROUP=\"u0_a\$CALC\"")
+            appendLine("    UGROUPG=\"u0_a\$CALC\"")
+            appendLine("    echo \"OWNER_DUMP=\$UGROUP\"")
+            appendLine("  fi")
+            appendLine("fi")
+            appendLine("")
+
+            // Stop browsers
+            appendLine("echo STEP=Stopping_browsers")
+            appendLine("am force-stop $srcPkg 2>/dev/null")
+            appendLine("am force-stop $dstPkg 2>/dev/null")
+            appendLine("sleep 2")
+            appendLine("")
+
+            // Backup
+            if (backup) {
+                appendLine("echo STEP=Backup")
+                appendLine("mkdir -p /sdcard/BrowserDataMover/backups")
+                appendLine("TIMESTAMP=\$(date +%s)")
+                appendLine("tar -czf \"/sdcard/BrowserDataMover/backups/${dstPkg}_\$TIMESTAMP.tar.gz\" -C \"\$DSTDIR\" . 2>/dev/null && echo BACKUP=OK || echo BACKUP=FAIL")
+                appendLine("")
+            }
+
+            // Clear target
+            appendLine("echo STEP=Clearing_target")
+            appendLine("rm -rf \"\$DSTDIR\"/*")
+            appendLine("")
+
+            // Copy data
+            appendLine("echo STEP=Copying_data")
+            appendLine("cp -a \"\$SRCDIR\"/* \"\$DSTDIR\"/ 2>&1 | tail -3")
+            appendLine("echo COPY=DONE")
+            appendLine("")
+
+            // Fix ownership
+            appendLine("echo STEP=Fixing_ownership")
+            appendLine("if [ -n \"\$UGROUP\" ] && [ \"\$UGROUP\" != \"root\" ]; then")
+            appendLine("  chown -R \"\$UGROUP:\$UGROUPG\" \"\$DSTDIR\"")
+            appendLine("  echo \"CHOWN=\$UGROUP\"")
+            appendLine("else")
+            appendLine("  echo CHOWN=SKIP")
+            appendLine("fi")
+            appendLine("")
+
+            // Fix SELinux
+            appendLine("echo STEP=SELinux")
+            appendLine("restorecon -RF \"\$DSTDIR\" 2>/dev/null")
+            appendLine("")
+
+            // Verify
+            appendLine("echo STEP=Verify")
+            appendLine("echo \"DST_FILES=\$(ls \"\$DSTDIR\"/ 2>/dev/null | head -10)\"")
+            appendLine("DST_COUNT=\$(ls \"\$DSTDIR\"/ 2>/dev/null | wc -l)")
+            appendLine("echo \"DST_COUNT=\$DST_COUNT\"")
+            appendLine("")
+
+            appendLine("echo TRANSFER_COMPLETE")
+        }
+    }
+
+    private fun parseOutput(output: String, error: String, source: BrowserInfo, target: BrowserInfo, listener: ProgressListener) {
+        var srcDir = ""
+        var dstDir = ""
+        var hasError = false
+
+        for (line in output.lines()) {
+            val trimmed = line.trim()
+            if (trimmed.isBlank()) continue
+
+            when {
+                trimmed.startsWith("STEP=") -> {
+                    postProgress(listener, trimmed.removePrefix("STEP=").replace("_", " "))
+                }
+                trimmed.startsWith("ROOT_ID=") -> {
+                    postProgress(listener, "Root: ${trimmed.removePrefix("ROOT_ID=").take(60)}")
+                }
+                trimmed.startsWith("SELINUX=") -> {
+                    postProgress(listener, "SELinux: ${trimmed.removePrefix("SELINUX=")}")
+                }
+                trimmed.startsWith("SRCDIR=") -> {
+                    srcDir = trimmed.removePrefix("SRCDIR=")
+                    postProgress(listener, "Source dir: $srcDir")
+                }
+                trimmed.startsWith("DSTDIR=") -> {
+                    dstDir = trimmed.removePrefix("DSTDIR=")
+                    postProgress(listener, "Target dir: $dstDir")
+                }
+                trimmed.startsWith("SRC_FILES=") -> {
+                    postProgress(listener, "Source files: ${trimmed.removePrefix("SRC_FILES=").take(100)}")
+                }
+                trimmed.startsWith("OWNER=") -> {
+                    postProgress(listener, "Original owner: ${trimmed.removePrefix("OWNER=")}")
+                }
+                trimmed.startsWith("OWNER_DUMP=") -> {
+                    postProgress(listener, "Owner (via UID): ${trimmed.removePrefix("OWNER_DUMP=")}")
+                }
+                trimmed.startsWith("BACKUP=") -> {
+                    val status = trimmed.removePrefix("BACKUP=")
+                    postProgress(listener, if (status == "OK") "✅ Backup saved" else "⚠️ Backup failed")
+                }
+                trimmed == "COPY=DONE" -> {
+                    postProgress(listener, "✅ Copy complete")
+                }
+                trimmed.startsWith("CHOWN=") -> {
+                    val v = trimmed.removePrefix("CHOWN=")
+                    postProgress(listener, if (v == "SKIP") "⚠️ Ownership: skipped" else "✅ Owner set: $v")
+                }
+                trimmed.startsWith("DST_FILES=") -> {
+                    postProgress(listener, "Target files: ${trimmed.removePrefix("DST_FILES=").take(100)}")
+                }
+                trimmed.startsWith("DST_COUNT=") -> {
+                    postProgress(listener, "Target file count: ${trimmed.removePrefix("DST_COUNT=")}")
+                }
+                trimmed.startsWith("ERROR=") -> {
+                    hasError = true
+                    val errMsg = trimmed.removePrefix("ERROR=")
+                    postError(listener, "$errMsg\n\nPackage: ${source.packageName}")
+                }
+                trimmed.startsWith("DEBUG_") -> {
+                    postProgress(listener, "Debug: $trimmed")
+                }
+                trimmed == "TRANSFER_COMPLETE" -> {
+                    if (!hasError) {
+                        postSuccess(listener,
+                            "Transfer successful!\n\n" +
+                            "From: ${source.name}\n($srcDir)\n\n" +
+                            "To: ${target.name}\n($dstDir)\n\n" +
+                            "You can now open ${target.name}.")
+                    }
+                    return
+                }
+            }
+        }
+
+        if (!hasError) {
+            postError(listener,
+                "Transfer may have failed.\n\n" +
+                "Output:\n${output.take(2000)}\n\n" +
+                "Errors:\n${error.take(500)}")
+        }
     }
 
     private fun postProgress(listener: ProgressListener, msg: String) {

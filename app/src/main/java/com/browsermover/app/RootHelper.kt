@@ -13,9 +13,52 @@ data class CommandResult(
 
 object RootHelper {
 
+    private var cachedSuMethod: Array<String>? = null
+
+    fun getSuMethod(): Array<String> {
+        if (cachedSuMethod != null) return cachedSuMethod!!
+
+        val methods = listOf(
+            arrayOf("su", "-mm"),
+            arrayOf("su", "--mount-master"),
+            arrayOf("su")
+        )
+
+        for (method in methods) {
+            try {
+                val process = Runtime.getRuntime().exec(method)
+                val os = DataOutputStream(process.outputStream)
+                val reader = BufferedReader(InputStreamReader(process.inputStream))
+
+                os.writeBytes("ls /data/data/ 2>/dev/null | head -3\n")
+                os.writeBytes("echo SU_TEST_DONE\n")
+                os.writeBytes("exit\n")
+                os.flush()
+                os.close()
+
+                val output = reader.readText()
+                reader.close()
+                process.waitFor(10, TimeUnit.SECONDS)
+
+                if (output.contains("SU_TEST_DONE") && output.lines().filter { it.isNotBlank() && it != "SU_TEST_DONE" }.isNotEmpty()) {
+                    cachedSuMethod = method
+                    return method
+                }
+            } catch (e: Exception) {
+                continue
+            }
+        }
+
+        cachedSuMethod = arrayOf("su")
+        return cachedSuMethod!!
+    }
+
+    fun getSuMethodName(): String = getSuMethod().joinToString(" ")
+
     fun isRootAvailable(): Boolean {
         return try {
-            val process = Runtime.getRuntime().exec("su")
+            val method = getSuMethod()
+            val process = Runtime.getRuntime().exec(method)
             val os = DataOutputStream(process.outputStream)
             val reader = BufferedReader(InputStreamReader(process.inputStream))
 
@@ -36,7 +79,8 @@ object RootHelper {
 
     fun executeCommand(command: String): CommandResult {
         return try {
-            val process = Runtime.getRuntime().exec("su")
+            val method = getSuMethod()
+            val process = Runtime.getRuntime().exec(method)
             val os = DataOutputStream(process.outputStream)
 
             os.writeBytes(command + "\n")
@@ -60,11 +104,7 @@ object RootHelper {
                 error = error.trim()
             )
         } catch (e: Exception) {
-            CommandResult(
-                success = false,
-                output = "",
-                error = e.message ?: "Unknown error"
-            )
+            CommandResult(false, "", e.message ?: "Unknown error")
         }
     }
 }
