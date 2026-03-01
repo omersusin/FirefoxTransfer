@@ -35,10 +35,14 @@ class DataMover {
                     postError(listener, "Root access not found!")
                     return@Thread
                 }
-                val suMethodName = RootHelper.getSuMethodName()
-                postProgress(listener, "Root method: $suMethodName")
+                postProgress(listener, "Root method: ${RootHelper.getSuMethodName()}")
 
-                val script = buildScript(srcPkg, dstPkg, backupFirst)
+                val isFirefox = source.type == BrowserType.FIREFOX
+                val script = if (isFirefox) {
+                    buildFirefoxScript(srcPkg, dstPkg, backupFirst)
+                } else {
+                    buildChromiumScript(srcPkg, dstPkg, backupFirst)
+                }
 
                 postProgress(listener, "Executing transfer script...")
 
@@ -69,55 +73,65 @@ class DataMover {
         }.start()
     }
 
-    private fun buildScript(srcPkg: String, dstPkg: String, backup: Boolean): String {
+    private fun buildFirefoxScript(srcPkg: String, dstPkg: String, backup: Boolean): String {
         return buildString {
             appendLine("echo STEP=Debug")
             appendLine("echo \"ROOT_ID=\$(id)\"")
             appendLine("echo \"SELINUX=\$(getenforce 2>/dev/null || echo unknown)\"")
             appendLine("")
 
-            // Find source
-            appendLine("echo STEP=Finding_source")
+            // Find directories
+            appendLine("echo STEP=Finding_directories")
             appendLine("SRCDIR=\"\"")
-            appendLine("if [ -d \"/data/data/$srcPkg\" ]; then SRCDIR=\"/data/data/$srcPkg\"; elif [ -d \"/data/user/0/$srcPkg\" ]; then SRCDIR=\"/data/user/0/$srcPkg\"; fi")
+            appendLine("if [ -d \"/data/data/$srcPkg\" ]; then SRCDIR=\"/data/data/$srcPkg\"")
+            appendLine("elif [ -d \"/data/user/0/$srcPkg\" ]; then SRCDIR=\"/data/user/0/$srcPkg\"; fi")
             appendLine("echo \"SRCDIR=\$SRCDIR\"")
             appendLine("")
 
-            // Validate source
-            appendLine("if [ -z \"\$SRCDIR\" ]; then")
-            appendLine("  echo \"ERROR=Source not found\"")
-            appendLine("  echo \"DEBUG_DATA_DATA=\$(ls /data/data/ 2>&1 | grep -i moz | head -10)\"")
-            appendLine("  echo \"DEBUG_USER_0=\$(ls /data/user/0/ 2>&1 | grep -i moz | head -10)\"")
-            appendLine("  exit 1")
-            appendLine("fi")
-            appendLine("")
-
-            // Source content
-            appendLine("echo \"SRC_FILES=\$(ls \$SRCDIR/ 2>/dev/null | head -10)\"")
-            appendLine("")
-
-            // Find target
-            appendLine("echo STEP=Finding_target")
             appendLine("DSTDIR=\"\"")
-            appendLine("if [ -d \"/data/data/$dstPkg\" ]; then DSTDIR=\"/data/data/$dstPkg\"; elif [ -d \"/data/user/0/$dstPkg\" ]; then DSTDIR=\"/data/user/0/$dstPkg\"; fi")
+            appendLine("if [ -d \"/data/data/$dstPkg\" ]; then DSTDIR=\"/data/data/$dstPkg\"")
+            appendLine("elif [ -d \"/data/user/0/$dstPkg\" ]; then DSTDIR=\"/data/user/0/$dstPkg\"; fi")
             appendLine("echo \"DSTDIR=\$DSTDIR\"")
             appendLine("")
 
-            // Validate target
-            appendLine("if [ -z \"\$DSTDIR\" ]; then")
-            appendLine("  echo \"ERROR=Target not found\"")
+            // Validate
+            appendLine("if [ -z \"\$SRCDIR\" ]; then echo \"ERROR=Source directory not found\"; exit 1; fi")
+            appendLine("if [ -z \"\$DSTDIR\" ]; then echo \"ERROR=Target directory not found\"; exit 1; fi")
+            appendLine("")
+
+            // Check source has mozilla profile
+            appendLine("echo STEP=Checking_source_profile")
+            appendLine("if [ ! -d \"\$SRCDIR/files/mozilla\" ]; then")
+            appendLine("  echo \"ERROR=No Firefox profile found in source. Open ${srcPkg} first.\"")
+            appendLine("  echo \"DEBUG_LS=\$(ls -la \$SRCDIR/files/ 2>&1 | head -10)\"")
             appendLine("  exit 1")
             appendLine("fi")
             appendLine("")
 
-            // Get owner BEFORE changes
+            // Show source profile info
+            appendLine("echo \"SRC_PROFILES=\$(ls \$SRCDIR/files/mozilla/ 2>/dev/null)\"")
+            appendLine("SRC_PROFILE_DIR=\$(ls -d \$SRCDIR/files/mozilla/*.default* 2>/dev/null | head -1)")
+            appendLine("if [ -z \"\$SRC_PROFILE_DIR\" ]; then")
+            appendLine("  SRC_PROFILE_DIR=\$(ls -d \$SRCDIR/files/mozilla/*/ 2>/dev/null | grep -v 'Crash' | head -1)")
+            appendLine("fi")
+            appendLine("echo \"SRC_PROFILE=\$SRC_PROFILE_DIR\"")
+            appendLine("")
+
+            // Show what data exists
+            appendLine("echo \"SRC_HAS_PLACES=\$(test -f \$SRC_PROFILE_DIR/places.sqlite && echo YES || echo NO)\"")
+            appendLine("echo \"SRC_HAS_LOGINS=\$(test -f \$SRC_PROFILE_DIR/logins.json && echo YES || echo NO)\"")
+            appendLine("echo \"SRC_HAS_COOKIES=\$(test -f \$SRC_PROFILE_DIR/cookies.sqlite && echo YES || echo NO)\"")
+            appendLine("echo \"SRC_HAS_KEYS=\$(test -f \$SRC_PROFILE_DIR/key4.db && echo YES || echo NO)\"")
+            appendLine("echo \"SRC_HAS_EXTENSIONS=\$(test -d \$SRC_PROFILE_DIR/extensions && echo YES || echo NO)\"")
+            appendLine("")
+
+            // Get target owner BEFORE changes
             appendLine("echo STEP=Getting_owner")
             appendLine("UGROUP=\$(ls -ld \"\$DSTDIR\" | awk '{print \$3}')")
             appendLine("UGROUPG=\$(ls -ld \"\$DSTDIR\" | awk '{print \$4}')")
             appendLine("echo \"OWNER=\$UGROUP:\$UGROUPG\"")
             appendLine("")
 
-            // Fallback owner via dumpsys
             appendLine("if [ -z \"\$UGROUP\" ] || [ \"\$UGROUP\" = \"root\" ]; then")
             appendLine("  DUMP_UID=\$(dumpsys package $dstPkg | grep 'userId=' | head -1 | sed 's/.*userId=//' | sed 's/[^0-9].*//')")
             appendLine("  if [ -n \"\$DUMP_UID\" ]; then")
@@ -145,57 +159,107 @@ class DataMover {
                 appendLine("")
             }
 
-            // Clear target
-            appendLine("echo STEP=Clearing_target")
-            appendLine("rm -rf \"\$DSTDIR\"/*")
+            // Find or create target mozilla dir
+            appendLine("echo STEP=Preparing_target_profile")
+            appendLine("mkdir -p \"\$DSTDIR/files/mozilla\"")
             appendLine("")
 
-            // Copy data
-            appendLine("echo STEP=Copying_data")
-            appendLine("cp -a \"\$SRCDIR\"/* \"\$DSTDIR\"/ 2>&1 | tail -3")
-            appendLine("echo COPY=DONE")
+            // Find target profile dir
+            appendLine("DST_PROFILE_DIR=\$(ls -d \$DSTDIR/files/mozilla/*.default* 2>/dev/null | head -1)")
+            appendLine("if [ -z \"\$DST_PROFILE_DIR\" ]; then")
+            appendLine("  DST_PROFILE_DIR=\$(ls -d \$DSTDIR/files/mozilla/*/ 2>/dev/null | grep -v 'Crash' | head -1)")
+            appendLine("fi")
             appendLine("")
 
-            // Clean up incompatible session/state files
-            appendLine("echo STEP=Cleaning_session_data")
+            // If target has no profile, use source profile name
+            appendLine("if [ -z \"\$DST_PROFILE_DIR\" ]; then")
+            appendLine("  SRC_PROFILE_NAME=\$(basename \$SRC_PROFILE_DIR)")
+            appendLine("  DST_PROFILE_DIR=\"\$DSTDIR/files/mozilla/\$SRC_PROFILE_NAME\"")
+            appendLine("  mkdir -p \"\$DST_PROFILE_DIR\"")
+            appendLine("  echo \"CREATED_PROFILE=\$DST_PROFILE_DIR\"")
+            appendLine("fi")
+            appendLine("echo \"DST_PROFILE=\$DST_PROFILE_DIR\"")
             appendLine("")
 
-            // Android Components session storage
-            appendLine("rm -rf \"\$DSTDIR/files/.browser_state\" 2>/dev/null")
-            appendLine("rm -rf \"\$DSTDIR/files/session\" 2>/dev/null")
-            appendLine("rm -f \"\$DSTDIR/files/session.json\" 2>/dev/null")
-            appendLine("rm -f \"\$DSTDIR/files/session.json.bak\" 2>/dev/null")
+            // Clear target profile content (keep the dir)
+            appendLine("echo STEP=Clearing_target_profile")
+            appendLine("rm -rf \"\$DST_PROFILE_DIR\"/*")
             appendLine("")
 
-            // GeckoView session files
-            appendLine("rm -f \"\$DSTDIR/files/mozilla/*/sessionstore.jsonlz4\" 2>/dev/null")
-            appendLine("rm -f \"\$DSTDIR/files/mozilla/*/sessionstore-backups\"/*.jsonlz4 2>/dev/null")
-            appendLine("rm -rf \"\$DSTDIR/files/mozilla/*/sessionstore-backups\" 2>/dev/null")
+            // Copy ONLY the profile data files (not session files)
+            appendLine("echo STEP=Copying_profile_data")
             appendLine("")
 
-            // Snapshots and tab state
-            appendLine("rm -rf \"\$DSTDIR/files/snapshots\" 2>/dev/null")
-            appendLine("rm -rf \"\$DSTDIR/files/tab_state\" 2>/dev/null")
-            appendLine("rm -rf \"\$DSTDIR/files/recently_closed_tabs\" 2>/dev/null")
+            // List of important files to copy
+            val importantFiles = listOf(
+                "places.sqlite", "places.sqlite-wal", "places.sqlite-shm",
+                "cookies.sqlite", "cookies.sqlite-wal", "cookies.sqlite-shm",
+                "logins.json",
+                "key4.db",
+                "cert9.db",
+                "permissions.sqlite",
+                "content-prefs.sqlite",
+                "formhistory.sqlite",
+                "protections.sqlite",
+                "storage.sqlite",
+                "webappsstore.sqlite",
+                "favicons.sqlite", "favicons.sqlite-wal", "favicons.sqlite-shm",
+                "prefs.js",
+                "search.json.mozlz4",
+                "handlers.json",
+                "xulstore.json",
+                "SiteSecurityServiceState.txt",
+                "addonStartup.json.lz4",
+                "compatibility.ini"
+            )
+
+            for (f in importantFiles) {
+                appendLine("cp -a \"\$SRC_PROFILE_DIR/$f\" \"\$DST_PROFILE_DIR/\" 2>/dev/null")
+            }
             appendLine("")
 
-            // Crash reports
-            appendLine("rm -rf \"\$DSTDIR/files/mozilla/Crash Reports\" 2>/dev/null")
-            appendLine("rm -rf \"\$DSTDIR/cache\" 2>/dev/null")
-            appendLine("rm -rf \"\$DSTDIR/code_cache\" 2>/dev/null")
+            // Copy extensions directory
+            appendLine("if [ -d \"\$SRC_PROFILE_DIR/extensions\" ]; then")
+            appendLine("  cp -a \"\$SRC_PROFILE_DIR/extensions\" \"\$DST_PROFILE_DIR/\"")
+            appendLine("  echo EXTENSIONS=COPIED")
+            appendLine("fi")
             appendLine("")
 
-            // Shared prefs that may reference wrong package
-            appendLine("rm -rf \"\$DSTDIR/shared_prefs\" 2>/dev/null")
+            // Copy extension storage
+            appendLine("if [ -d \"\$SRC_PROFILE_DIR/browser-extension-data\" ]; then")
+            appendLine("  cp -a \"\$SRC_PROFILE_DIR/browser-extension-data\" \"\$DST_PROFILE_DIR/\"")
+            appendLine("  echo EXT_DATA=COPIED")
+            appendLine("fi")
             appendLine("")
 
-            // App-specific databases that may be incompatible
-            appendLine("rm -f \"\$DSTDIR/databases/fenix*\" 2>/dev/null")
-            appendLine("rm -f \"\$DSTDIR/databases/focus*\" 2>/dev/null")
-            appendLine("rm -f \"\$DSTDIR/databases/klar*\" 2>/dev/null")
+            // Copy storage (for extensions)
+            appendLine("if [ -d \"\$SRC_PROFILE_DIR/storage\" ]; then")
+            appendLine("  cp -a \"\$SRC_PROFILE_DIR/storage\" \"\$DST_PROFILE_DIR/\"")
+            appendLine("  echo STORAGE=COPIED")
+            appendLine("fi")
             appendLine("")
 
-            appendLine("echo SESSION_CLEAN=DONE")
+            // Copy profiles.ini and adjust
+            appendLine("cp -a \"\$SRCDIR/files/mozilla/profiles.ini\" \"\$DSTDIR/files/mozilla/\" 2>/dev/null")
+            appendLine("cp -a \"\$SRCDIR/files/mozilla/installs.ini\" \"\$DSTDIR/files/mozilla/\" 2>/dev/null")
+            appendLine("")
+
+            // DO NOT copy these (they cause crashes):
+            // - sessionstore.jsonlz4
+            // - sessionstore-backups/
+            // - .browser_state/
+            // - session.json
+            // - shared_prefs/
+            appendLine("echo SESSION_SKIP=Skipped_session_files_intentionally")
+            appendLine("")
+
+            // Verify copied data
+            appendLine("echo STEP=Verifying_copied_data")
+            appendLine("echo \"DST_HAS_PLACES=\$(test -f \$DST_PROFILE_DIR/places.sqlite && echo YES || echo NO)\"")
+            appendLine("echo \"DST_HAS_LOGINS=\$(test -f \$DST_PROFILE_DIR/logins.json && echo YES || echo NO)\"")
+            appendLine("echo \"DST_HAS_COOKIES=\$(test -f \$DST_PROFILE_DIR/cookies.sqlite && echo YES || echo NO)\"")
+            appendLine("echo \"DST_HAS_KEYS=\$(test -f \$DST_PROFILE_DIR/key4.db && echo YES || echo NO)\"")
+            appendLine("echo \"DST_PROFILE_FILES=\$(ls \$DST_PROFILE_DIR/ 2>/dev/null | head -15)\"")
             appendLine("")
 
             // Fix ownership
@@ -213,17 +277,95 @@ class DataMover {
             appendLine("restorecon -RF \"\$DSTDIR\" 2>/dev/null")
             appendLine("")
 
+            appendLine("echo TRANSFER_COMPLETE")
+        }
+    }
+
+    private fun buildChromiumScript(srcPkg: String, dstPkg: String, backup: Boolean): String {
+        return buildString {
+            appendLine("echo STEP=Debug")
+            appendLine("echo \"ROOT_ID=\$(id)\"")
+            appendLine("")
+
+            // Find directories
+            appendLine("echo STEP=Finding_directories")
+            appendLine("SRCDIR=\"\"")
+            appendLine("if [ -d \"/data/data/$srcPkg\" ]; then SRCDIR=\"/data/data/$srcPkg\"")
+            appendLine("elif [ -d \"/data/user/0/$srcPkg\" ]; then SRCDIR=\"/data/user/0/$srcPkg\"; fi")
+            appendLine("echo \"SRCDIR=\$SRCDIR\"")
+            appendLine("")
+
+            appendLine("DSTDIR=\"\"")
+            appendLine("if [ -d \"/data/data/$dstPkg\" ]; then DSTDIR=\"/data/data/$dstPkg\"")
+            appendLine("elif [ -d \"/data/user/0/$dstPkg\" ]; then DSTDIR=\"/data/user/0/$dstPkg\"; fi")
+            appendLine("echo \"DSTDIR=\$DSTDIR\"")
+            appendLine("")
+
+            appendLine("if [ -z \"\$SRCDIR\" ]; then echo \"ERROR=Source not found\"; exit 1; fi")
+            appendLine("if [ -z \"\$DSTDIR\" ]; then echo \"ERROR=Target not found\"; exit 1; fi")
+            appendLine("")
+
+            // Get owner
+            appendLine("echo STEP=Getting_owner")
+            appendLine("UGROUP=\$(ls -ld \"\$DSTDIR\" | awk '{print \$3}')")
+            appendLine("UGROUPG=\$(ls -ld \"\$DSTDIR\" | awk '{print \$4}')")
+            appendLine("echo \"OWNER=\$UGROUP:\$UGROUPG\"")
+            appendLine("")
+
+            appendLine("if [ -z \"\$UGROUP\" ] || [ \"\$UGROUP\" = \"root\" ]; then")
+            appendLine("  DUMP_UID=\$(dumpsys package $dstPkg | grep 'userId=' | head -1 | sed 's/.*userId=//' | sed 's/[^0-9].*//')")
+            appendLine("  if [ -n \"\$DUMP_UID\" ]; then")
+            appendLine("    CALC=\$((\$DUMP_UID - 10000))")
+            appendLine("    UGROUP=\"u0_a\$CALC\"")
+            appendLine("    UGROUPG=\"u0_a\$CALC\"")
+            appendLine("  fi")
+            appendLine("fi")
+            appendLine("")
+
+            // Stop
+            appendLine("echo STEP=Stopping_browsers")
+            appendLine("am force-stop $srcPkg 2>/dev/null")
+            appendLine("am force-stop $dstPkg 2>/dev/null")
+            appendLine("sleep 2")
+            appendLine("")
+
+            // Backup
+            if (backup) {
+                appendLine("echo STEP=Backup")
+                appendLine("mkdir -p /sdcard/BrowserDataMover/backups")
+                appendLine("TIMESTAMP=\$(date +%s)")
+                appendLine("tar -czf \"/sdcard/BrowserDataMover/backups/${dstPkg}_\$TIMESTAMP.tar.gz\" -C \"\$DSTDIR\" . 2>/dev/null && echo BACKUP=OK || echo BACKUP=FAIL")
+                appendLine("")
+            }
+
+            // Full copy for Chromium (they're more compatible)
+            appendLine("echo STEP=Clearing_target")
+            appendLine("rm -rf \"\$DSTDIR\"/*")
+            appendLine("")
+
+            appendLine("echo STEP=Copying_data")
+            appendLine("cp -a \"\$SRCDIR\"/* \"\$DSTDIR\"/ 2>&1 | tail -3")
+            appendLine("echo COPY=DONE")
+            appendLine("")
+
+            // Fix ownership
+            appendLine("echo STEP=Fixing_ownership")
+            appendLine("if [ -n \"\$UGROUP\" ] && [ \"\$UGROUP\" != \"root\" ]; then")
+            appendLine("  chown -R \"\$UGROUP:\$UGROUPG\" \"\$DSTDIR\"")
+            appendLine("  echo \"CHOWN=\$UGROUP\"")
+            appendLine("else")
+            appendLine("  echo CHOWN=SKIP")
+            appendLine("fi")
+            appendLine("")
+
+            // SELinux
+            appendLine("echo STEP=SELinux")
+            appendLine("restorecon -RF \"\$DSTDIR\" 2>/dev/null")
+            appendLine("")
+
             // Verify
             appendLine("echo STEP=Verify")
             appendLine("echo \"DST_FILES=\$(ls \"\$DSTDIR\"/ 2>/dev/null | head -10)\"")
-            appendLine("DST_COUNT=\$(ls \"\$DSTDIR\"/ 2>/dev/null | wc -l)")
-            appendLine("echo \"DST_COUNT=\$DST_COUNT\"")
-            appendLine("")
-
-            // Show what was kept
-            appendLine("echo STEP=Kept_data")
-            appendLine("echo \"KEPT_MOZILLA=\$(ls \"\$DSTDIR/files/mozilla/\" 2>/dev/null | head -5)\"")
-            appendLine("echo \"KEPT_DBS=\$(ls \"\$DSTDIR/databases/\" 2>/dev/null | head -10)\"")
             appendLine("")
 
             appendLine("echo TRANSFER_COMPLETE")
@@ -236,77 +378,63 @@ class DataMover {
         var hasError = false
 
         for (line in output.lines()) {
-            val trimmed = line.trim()
-            if (trimmed.isBlank()) continue
+            val t = line.trim()
+            if (t.isBlank()) continue
 
             when {
-                trimmed.startsWith("STEP=") -> {
-                    postProgress(listener, trimmed.removePrefix("STEP=").replace("_", " "))
+                t.startsWith("STEP=") -> postProgress(listener, t.removePrefix("STEP=").replace("_", " "))
+                t.startsWith("ROOT_ID=") -> postProgress(listener, "Root: ${t.removePrefix("ROOT_ID=").take(60)}")
+                t.startsWith("SELINUX=") -> postProgress(listener, "SELinux: ${t.removePrefix("SELINUX=")}")
+                t.startsWith("SRCDIR=") -> { srcDir = t.removePrefix("SRCDIR="); postProgress(listener, "Source: $srcDir") }
+                t.startsWith("DSTDIR=") -> { dstDir = t.removePrefix("DSTDIR="); postProgress(listener, "Target: $dstDir") }
+                t.startsWith("OWNER=") -> postProgress(listener, "Owner: ${t.removePrefix("OWNER=")}")
+                t.startsWith("OWNER_DUMP=") -> postProgress(listener, "Owner (UID): ${t.removePrefix("OWNER_DUMP=")}")
+                t.startsWith("SRC_PROFILES=") -> postProgress(listener, "Profiles: ${t.removePrefix("SRC_PROFILES=")}")
+                t.startsWith("SRC_PROFILE=") -> postProgress(listener, "Source profile: ${t.removePrefix("SRC_PROFILE=")}")
+                t.startsWith("DST_PROFILE=") -> postProgress(listener, "Target profile: ${t.removePrefix("DST_PROFILE=")}")
+                t.startsWith("CREATED_PROFILE=") -> postProgress(listener, "Created profile: ${t.removePrefix("CREATED_PROFILE=")}")
+                t.startsWith("SRC_HAS_") -> {
+                    val key = t.substringBefore("=").removePrefix("SRC_HAS_")
+                    val value = t.substringAfter("=")
+                    postProgress(listener, "Source $key: $value")
                 }
-                trimmed.startsWith("ROOT_ID=") -> {
-                    postProgress(listener, "Root: ${trimmed.removePrefix("ROOT_ID=").take(60)}")
+                t.startsWith("DST_HAS_") -> {
+                    val key = t.substringBefore("=").removePrefix("DST_HAS_")
+                    val value = t.substringAfter("=")
+                    postProgress(listener, "Target $key: $value")
                 }
-                trimmed.startsWith("SELINUX=") -> {
-                    postProgress(listener, "SELinux: ${trimmed.removePrefix("SELINUX=")}")
+                t.startsWith("DST_PROFILE_FILES=") -> postProgress(listener, "Copied files: ${t.removePrefix("DST_PROFILE_FILES=").take(150)}")
+                t.startsWith("DST_FILES=") -> postProgress(listener, "Target files: ${t.removePrefix("DST_FILES=").take(100)}")
+                t.startsWith("BACKUP=") -> postProgress(listener, if (t == "BACKUP=OK") "✅ Backup saved" else "⚠️ Backup failed")
+                t == "COPY=DONE" -> postProgress(listener, "✅ Copy complete")
+                t == "EXTENSIONS=COPIED" -> postProgress(listener, "✅ Extensions copied")
+                t == "EXT_DATA=COPIED" -> postProgress(listener, "✅ Extension data copied")
+                t == "STORAGE=COPIED" -> postProgress(listener, "✅ Storage copied")
+                t.startsWith("SESSION_SKIP=") -> postProgress(listener, "⏭️ Session files skipped (prevents crash)")
+                t.startsWith("CHOWN=") -> {
+                    val v = t.removePrefix("CHOWN=")
+                    postProgress(listener, if (v == "SKIP") "⚠️ Ownership skipped" else "✅ Owner: $v")
                 }
-                trimmed.startsWith("SRCDIR=") -> {
-                    srcDir = trimmed.removePrefix("SRCDIR=")
-                    postProgress(listener, "Source dir: $srcDir")
-                }
-                trimmed.startsWith("DSTDIR=") -> {
-                    dstDir = trimmed.removePrefix("DSTDIR=")
-                    postProgress(listener, "Target dir: $dstDir")
-                }
-                trimmed.startsWith("SRC_FILES=") -> {
-                    postProgress(listener, "Source files: ${trimmed.removePrefix("SRC_FILES=").take(100)}")
-                }
-                trimmed.startsWith("OWNER=") -> {
-                    postProgress(listener, "Original owner: ${trimmed.removePrefix("OWNER=")}")
-                }
-                trimmed.startsWith("OWNER_DUMP=") -> {
-                    postProgress(listener, "Owner (via UID): ${trimmed.removePrefix("OWNER_DUMP=")}")
-                }
-                trimmed.startsWith("BACKUP=") -> {
-                    val s = trimmed.removePrefix("BACKUP=")
-                    postProgress(listener, if (s == "OK") "✅ Backup saved" else "⚠️ Backup failed")
-                }
-                trimmed == "COPY=DONE" -> {
-                    postProgress(listener, "✅ Copy complete")
-                }
-                trimmed == "SESSION_CLEAN=DONE" -> {
-                    postProgress(listener, "✅ Session data cleaned (prevents crashes)")
-                }
-                trimmed.startsWith("CHOWN=") -> {
-                    val v = trimmed.removePrefix("CHOWN=")
-                    postProgress(listener, if (v == "SKIP") "⚠️ Ownership: skipped" else "✅ Owner set: $v")
-                }
-                trimmed.startsWith("DST_FILES=") -> {
-                    postProgress(listener, "Target files: ${trimmed.removePrefix("DST_FILES=").take(100)}")
-                }
-                trimmed.startsWith("DST_COUNT=") -> {
-                    postProgress(listener, "Target file count: ${trimmed.removePrefix("DST_COUNT=")}")
-                }
-                trimmed.startsWith("KEPT_MOZILLA=") -> {
-                    postProgress(listener, "Kept (mozilla): ${trimmed.removePrefix("KEPT_MOZILLA=").take(100)}")
-                }
-                trimmed.startsWith("KEPT_DBS=") -> {
-                    postProgress(listener, "Kept (databases): ${trimmed.removePrefix("KEPT_DBS=").take(100)}")
-                }
-                trimmed.startsWith("ERROR=") -> {
+                t.startsWith("ERROR=") -> {
                     hasError = true
-                    postError(listener, "${trimmed.removePrefix("ERROR=")}\n\nPackage: ${source.packageName}")
+                    postError(listener, t.removePrefix("ERROR="))
                 }
-                trimmed.startsWith("DEBUG_") -> {
-                    postProgress(listener, "Debug: $trimmed")
-                }
-                trimmed == "TRANSFER_COMPLETE" -> {
+                t.startsWith("DEBUG_") -> postProgress(listener, t)
+                t == "TRANSFER_COMPLETE" -> {
                     if (!hasError) {
+                        val transferredItems = mutableListOf<String>()
+                        if (output.contains("DST_HAS_PLACES=YES")) transferredItems.add("Bookmarks & History")
+                        if (output.contains("DST_HAS_LOGINS=YES")) transferredItems.add("Saved Logins")
+                        if (output.contains("DST_HAS_COOKIES=YES")) transferredItems.add("Cookies")
+                        if (output.contains("DST_HAS_KEYS=YES")) transferredItems.add("Encryption Keys")
+                        if (output.contains("EXTENSIONS=COPIED")) transferredItems.add("Extensions")
+
                         postSuccess(listener,
                             "Transfer successful!\n\n" +
                             "From: ${source.name}\n($srcDir)\n\n" +
                             "To: ${target.name}\n($dstDir)\n\n" +
-                            "Transferred: Bookmarks, logins, cookies, history, extensions\n" +
-                            "Cleaned: Session/tab data (prevents crashes)\n\n" +
+                            "Transferred:\n${transferredItems.joinToString("\n") { "• $it" }}\n\n" +
+                            "Skipped (prevents crashes):\n• Open tabs / Session data\n• App preferences\n\n" +
                             "You can now open ${target.name}.")
                     }
                     return
@@ -315,8 +443,7 @@ class DataMover {
         }
 
         if (!hasError) {
-            postError(listener,
-                "Transfer may have failed.\n\nOutput:\n${output.take(2000)}\n\nErrors:\n${error.take(500)}")
+            postError(listener, "Transfer may have failed.\n\nOutput:\n${output.take(2000)}\n\nErrors:\n${error.take(500)}")
         }
     }
 
