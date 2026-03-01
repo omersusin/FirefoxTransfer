@@ -30,24 +30,21 @@ class DataMover {
 
                 postProgress(listener, "Transfer: ${source.name} -> ${target.name}")
 
-                postProgress(listener, "Detecting root method...")
+                postProgress(listener, "Checking root...")
                 if (!RootHelper.isRootAvailable()) {
                     postError(listener, "Root access not found!")
                     return@Thread
                 }
-                postProgress(listener, "Root method: ${RootHelper.getSuMethodName()}")
 
-                val isFirefox = source.type == BrowserType.FIREFOX
-                val script = if (isFirefox) {
-                    buildFirefoxScript(srcPkg, dstPkg, backupFirst)
+                val script = if (source.type == BrowserType.GECKO) {
+                    buildGeckoScript(srcPkg, dstPkg, backupFirst)
                 } else {
                     buildChromiumScript(srcPkg, dstPkg, backupFirst)
                 }
 
-                postProgress(listener, "Executing transfer script...")
+                postProgress(listener, "Executing expert migration script...")
 
-                val suMethod = RootHelper.getSuMethod()
-                val process = Runtime.getRuntime().exec(suMethod)
+                val process = Runtime.getRuntime().exec(RootHelper.getSuMethod())
                 val os = DataOutputStream(process.outputStream)
 
                 os.writeBytes(script)
@@ -63,7 +60,7 @@ class DataMover {
 
                 stdout.close()
                 stderr.close()
-                process.waitFor(180, TimeUnit.SECONDS)
+                process.waitFor(300, TimeUnit.SECONDS)
 
                 parseOutput(output, error, source, target, listener)
 
@@ -73,77 +70,54 @@ class DataMover {
         }.start()
     }
 
-    private fun buildFirefoxScript(srcPkg: String, dstPkg: String, backup: Boolean): String {
+    private fun buildGeckoScript(srcPkg: String, dstPkg: String, backup: Boolean): String {
         return buildString {
-            // 1. Setup and Discovery
             appendLine("SRC_PKG=\"$srcPkg\"")
             appendLine("TGT_PKG=\"$dstPkg\"")
             appendLine("SRC_DIR=\"/data/data/\$SRC_PKG\"")
             appendLine("TGT_DIR=\"/data/data/\$TGT_PKG\"")
-            appendLine("")
-            appendLine("echo STEP=Preparing_migration")
             
-            // 2. Resolve UID/GID BEFORE wiping
+            appendLine("echo STEP=Resolving_UID")
             appendLine("TGT_UID=\$(stat -c '%u' \"\$TGT_DIR\" 2>/dev/null || dumpsys package \"\$TGT_PKG\" | grep -m1 'userId=' | grep -oP 'userId=\\K[0-9]+')")
-            appendLine("echo \"DEBUG_TGT_UID=\$TGT_UID\"")
-            appendLine("")
-
-            // 3. Force stop apps
-            appendLine("echo STEP=Stopping_applications")
+            
+            appendLine("echo STEP=Stopping_apps")
             appendLine("am force-stop \"\$SRC_PKG\" 2>/dev/null")
             appendLine("am force-stop \"\$TGT_PKG\" 2>/dev/null")
             appendLine("pkill -9 -f \"\$SRC_PKG\" 2>/dev/null")
             appendLine("pkill -9 -f \"\$TGT_PKG\" 2>/dev/null")
-            appendLine("sleep 1")
-            appendLine("")
+            
+            appendLine("echo STEP=WAL_Checkpoint")
+            appendLine("find \"\$SRC_DIR\" -name '*.sqlite' -o -name '*.db' | while read db; do sqlite3 \"\$db\" 'PRAGMA wal_checkpoint(TRUNCATE);' 2>/dev/null; done")
 
-            // 4. Backup if requested
             if (backup) {
                 appendLine("echo STEP=Backup")
                 appendLine("mkdir -p /sdcard/BrowserDataMover/backups")
                 appendLine("tar -czf \"/sdcard/BrowserDataMover/backups/\${TGT_PKG}_\$(date +%s).tar.gz\" -C \"\$TGT_DIR\" . 2>/dev/null")
             }
 
-            // 5. Clear Target (Keep lib symlink!)
             appendLine("echo STEP=Clearing_target")
             appendLine("find \"\$TGT_DIR\" -mindepth 1 -maxdepth 1 ! -name 'lib' -exec rm -rf {} +")
-            appendLine("")
 
-            // 6. Copy Data (Selective to avoid architecture-specific crashes)
             appendLine("echo STEP=Copying_data")
             appendLine("cp -a \"\$SRC_DIR/files\" \"\$TGT_DIR/\"")
             appendLine("cp -a \"\$SRC_DIR/databases\" \"\$TGT_DIR/\"")
             appendLine("cp -a \"\$SRC_DIR/shared_prefs\" \"\$TGT_DIR/\"")
-            appendLine("")
 
-            // 7. Cleanup Volatile Caches
-            appendLine("echo STEP=Cleaning_caches")
-            appendLine("find \"\$TGT_DIR\" -type d \\( -name 'cache2' -o -name 'startupCache' -o -name 'shader-cache' -o -name 'app_tmpdir' \\) -exec rm -rf {} + 2>/dev/null")
-            appendLine("find \"\$TGT_DIR\" -type f \\( -name 'addonStartup.json.lz4' -o -name '.parentlock' -o -name 'lock' -o -name '*-wal' -o -name '*-shm' \\) -delete 2>/dev/null")
-            appendLine("")
+            appendLine("echo STEP=Cleaning_crash_triggers")
+            appendLine("find \"\$TGT_DIR\" -type d \\( -name 'cache2' -o -name 'startupCache' -o -name 'shader-cache' \\) -exec rm -rf {} + 2>/dev/null")
+            appendLine("find \"\$TGT_DIR\" -type f \\( -name 'compatibility.ini' -o -name 'addonStartup.json.lz4' -o -name '.parentlock' -o -name 'lock' -o -name '*-wal' -o -name '*-shm' \\) -delete 2>/dev/null")
 
-            // 8. Patch Paths (Recursive text search and replace)
             appendLine("echo STEP=Patching_paths")
-            appendLine("find \"\$TGT_DIR\" -type f \\( -name '*.ini' -o -name '*.js' -o -name '*.json' -o -name '*.xml' -o -name 'prefs' \\) | while read f; do")
-            appendLine("  grep -ql \"\$SRC_PKG\" \"\$f\" && sed -i \"s|\$SRC_PKG|\$TGT_PKG|g\" \"\$f\"")
-            appendLine("done")
-            appendLine("")
+            appendLine("find \"\$TGT_DIR\" -type f \\( -name '*.ini' -o -name '*.js' -o -name '*.json' -o -name '*.xml' \\) | while read f; do sed -i \"s|\$SRC_PKG|\$TGT_PKG|g\" \"\$f\" 2>/dev/null; done")
 
-            // 9. Patch Databases (Safe dump/restore)
             appendLine("echo STEP=Patching_databases")
             appendLine("find \"\$TGT_DIR/databases\" -type f -name '*.db' | while read db; do")
-            appendLine("  echo \"    Checking: \$db\"")
-            appendLine("  grep -ql \"\$SRC_PKG\" \"\$db\" && (")
-            appendLine("    sqlite3 \"\$db\" .dump | sed \"s|\$SRC_PKG|\$TGT_PKG|g\" | sqlite3 \"\$db.tmp\" && mv \"\$db.tmp\" \"\$db\"")
-            appendLine("  )")
+            appendLine("  sqlite3 \"\$db\" .dump | sed \"s|\$SRC_PKG|\$TGT_PKG|g\" | sqlite3 \"\$db.tmp\" && mv \"\$db.tmp\" \"\$db\"")
             appendLine("done")
-            appendLine("")
 
-            // 10. Fix Ownership and SELinux (CRITICAL)
-            appendLine("echo STEP=Restoring_security_context")
+            appendLine("echo STEP=Restoring_security")
             appendLine("chown -R \"\$TGT_UID:\$TGT_UID\" \"\$TGT_DIR\"")
             appendLine("restorecon -RF \"\$TGT_DIR\"")
-            appendLine("")
             
             appendLine("echo TRANSFER_COMPLETE")
         }
@@ -155,9 +129,7 @@ class DataMover {
             appendLine("TGT_PKG=\"$dstPkg\"")
             appendLine("SRC_DIR=\"/data/data/\$SRC_PKG\"")
             appendLine("TGT_DIR=\"/data/data/\$TGT_PKG\"")
-            appendLine("")
             
-            appendLine("echo STEP=Preparing_migration")
             appendLine("TGT_UID=\$(stat -c '%u' \"\$TGT_DIR\" 2>/dev/null || dumpsys package \"\$TGT_PKG\" | grep -m1 'userId=' | grep -oP 'userId=\\K[0-9]+')")
             
             appendLine("am force-stop \"\$SRC_PKG\" 2>/dev/null")
@@ -171,11 +143,8 @@ class DataMover {
             appendLine("rm -rf \"\$TGT_DIR/cache\" \"\$TGT_DIR/code_cache\"")
             
             appendLine("echo STEP=Patching_paths")
-            appendLine("find \"\$TGT_DIR\" -type f \\( -name '*.xml' -o -name 'Preferences' -o -name 'Local State' \\) | while read f; do")
-            appendLine("  sed -i \"s|\$SRC_PKG|\$TGT_PKG|g\" \"\$f\"")
-            appendLine("done")
+            appendLine("find \"\$TGT_DIR\" -type f \\( -name '*.xml' -o -name 'Preferences' -o -name 'Local State' \\) | while read f; do sed -i \"s|\$SRC_PKG|\$TGT_PKG|g\" \"\$f\" 2>/dev/null; done")
             
-            appendLine("echo STEP=Restoring_security_context")
             appendLine("chown -R \"\$TGT_UID:\$TGT_UID\" \"\$TGT_DIR\"")
             appendLine("restorecon -RF \"\$TGT_DIR\"")
             appendLine("echo TRANSFER_COMPLETE")
@@ -184,37 +153,19 @@ class DataMover {
 
     private fun parseOutput(output: String, error: String, source: BrowserInfo, target: BrowserInfo, listener: ProgressListener) {
         var hasError = false
-
         for (line in output.lines()) {
             val t = line.trim()
-            if (t.isBlank()) continue
-
-            when {
-                t.startsWith("STEP=") -> postProgress(listener, t.removePrefix("STEP=").replace("_", " "))
-                t.startsWith("ERROR=") -> { hasError = true; postError(listener, t.removePrefix("ERROR=")) }
-                t == "TRANSFER_COMPLETE" -> {
-                    if (!hasError) {
-                        postSuccess(listener, "Transfer successful!\n\nFrom: ${source.name}\nTo: ${target.name}")
-                    }
-                    return
-                }
+            if (t.startsWith("STEP=")) postProgress(listener, t.removePrefix("STEP=").replace("_", " "))
+            if (t.startsWith("ERROR=")) { hasError = true; postError(listener, t.removePrefix("ERROR=")) }
+            if (t == "TRANSFER_COMPLETE") {
+                if (!hasError) postSuccess(listener, "Clone successful!\nFrom: ${source.name}\nTo: ${target.name}")
+                return
             }
         }
-
-        if (!hasError) {
-            postError(listener, "Transfer may have failed.\n\n$error")
-        }
+        if (!hasError) postError(listener, "Transfer failed or interrupted.\n$error")
     }
 
-    private fun postProgress(listener: ProgressListener, msg: String) {
-        mainHandler.post { listener.onProgress(msg) }
-    }
-
-    private fun postSuccess(listener: ProgressListener, msg: String) {
-        mainHandler.post { listener.onSuccess(msg) }
-    }
-
-    private fun postError(listener: ProgressListener, msg: String) {
-        mainHandler.post { listener.onError(msg) }
-    }
+    private fun postProgress(listener: ProgressListener, msg: String) { mainHandler.post { listener.onProgress(msg) } }
+    private fun postSuccess(listener: ProgressListener, msg: String) { mainHandler.post { listener.onSuccess(msg) } }
+    private fun postError(listener: ProgressListener, msg: String) { mainHandler.post { listener.onError(msg) } }
 }

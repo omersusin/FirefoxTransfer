@@ -1,142 +1,127 @@
 package com.browsermover.app
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
+import android.net.Uri
+import android.os.Build
+import java.io.File
+import java.util.zip.ZipFile
 
 class BrowserDetector(private val context: Context) {
 
-    private val knownBrowsers = listOf(
-        BrowserInfo("Firefox", "org.mozilla.firefox", BrowserType.FIREFOX),
-        BrowserInfo("Firefox Beta", "org.mozilla.firefox_beta", BrowserType.FIREFOX),
-        BrowserInfo("Firefox Nightly", "org.mozilla.fenix", BrowserType.FIREFOX),
-        BrowserInfo("Firefox Focus", "org.mozilla.focus", BrowserType.FIREFOX),
-        BrowserInfo("Firefox Focus Beta", "org.mozilla.focus.beta", BrowserType.FIREFOX),
-        BrowserInfo("Firefox Focus Nightly", "org.mozilla.focus.nightly", BrowserType.FIREFOX),
-        BrowserInfo("Firefox Klar", "org.mozilla.klar", BrowserType.FIREFOX),
-        BrowserInfo("Firefox (Android TV)", "org.mozilla.tv.firefox", BrowserType.FIREFOX),
-        BrowserInfo("Firefox Lite", "org.mozilla.rocket", BrowserType.FIREFOX),
-        BrowserInfo("Firefox Reality", "org.mozilla.vrbrowser", BrowserType.FIREFOX),
-        BrowserInfo("Firefox Aurora", "org.mozilla.fennec_aurora", BrowserType.FIREFOX),
-        BrowserInfo("Fennec F-Droid", "org.mozilla.fennec_fdroid", BrowserType.FIREFOX),
-        BrowserInfo("Mull", "us.spotco.fennec_dos", BrowserType.FIREFOX),
-        BrowserInfo("IronFox", "org.ironfoxoss.ironfox", BrowserType.FIREFOX),
-        BrowserInfo("IronFox Nightly", "org.ironfoxoss.ironfox.nightly", BrowserType.FIREFOX),
-        BrowserInfo("Iceraven", "io.github.forkmaintainers.iceraven", BrowserType.FIREFOX),
-        BrowserInfo("Tor Browser", "org.torproject.torbrowser", BrowserType.FIREFOX),
-        BrowserInfo("Tor Browser Alpha", "org.torproject.torbrowser_alpha", BrowserType.FIREFOX),
-        BrowserInfo("Orfox", "info.guardianproject.orfox", BrowserType.FIREFOX),
-        BrowserInfo("IceCatMobile", "org.gnu.icecat", BrowserType.FIREFOX),
-        BrowserInfo("Waterfox", "net.waterfox.android.release", BrowserType.FIREFOX),
+    companion object {
+        private val GECKO_NATIVE_LIBS = setOf("libxul.so", "libmozglue.so")
+        private const val GECKO_LIB_MIN_MATCH = 2
 
-        BrowserInfo("Chrome", "com.android.chrome", BrowserType.CHROMIUM),
-        BrowserInfo("Chrome Beta", "com.chrome.beta", BrowserType.CHROMIUM),
-        BrowserInfo("Chrome Dev", "com.chrome.dev", BrowserType.CHROMIUM),
-        BrowserInfo("Chrome Canary", "com.chrome.canary", BrowserType.CHROMIUM),
-        BrowserInfo("Chromium", "org.chromium.chrome", BrowserType.CHROMIUM),
-        BrowserInfo("Brave", "com.brave.browser", BrowserType.CHROMIUM),
-        BrowserInfo("Brave Beta", "com.brave.browser_beta", BrowserType.CHROMIUM),
-        BrowserInfo("Brave Nightly", "com.brave.browser_nightly", BrowserType.CHROMIUM),
-        BrowserInfo("Edge", "com.microsoft.emmx", BrowserType.CHROMIUM),
-        BrowserInfo("Edge Beta", "com.microsoft.emmx.beta", BrowserType.CHROMIUM),
-        BrowserInfo("Edge Canary", "com.microsoft.emmx.canary", BrowserType.CHROMIUM),
-        BrowserInfo("Opera", "com.opera.browser", BrowserType.CHROMIUM),
-        BrowserInfo("Opera Beta", "com.opera.browser.beta", BrowserType.CHROMIUM),
-        BrowserInfo("Opera Mini", "com.opera.mini.native", BrowserType.CHROMIUM),
-        BrowserInfo("Samsung Internet", "com.sec.android.app.sbrowser", BrowserType.CHROMIUM),
-        BrowserInfo("Samsung Internet Beta", "com.sec.android.app.sbrowser.beta", BrowserType.CHROMIUM),
-        BrowserInfo("Vivaldi", "com.vivaldi.browser", BrowserType.CHROMIUM),
-        BrowserInfo("Vivaldi Snapshot", "com.vivaldi.browser.snapshot", BrowserType.CHROMIUM),
-        BrowserInfo("Kiwi Browser", "com.kiwibrowser.browser", BrowserType.CHROMIUM),
-        BrowserInfo("Vanadium", "app.vanadium.browser", BrowserType.CHROMIUM),
-        BrowserInfo("DuckDuckGo", "com.duckduckgo.mobile.android", BrowserType.CHROMIUM),
-        BrowserInfo("Adblock Browser", "org.adblockplus.browser", BrowserType.CHROMIUM),
-        BrowserInfo("Adblock Browser Beta", "org.adblockplus.browser.beta", BrowserType.CHROMIUM),
-    )
+        private val CHROMIUM_NATIVE_LIBS = setOf(
+            "libchrome.so", "libmonochrome.so", "libchromeview.so",
+            "libstandalonebrowser.so", "libchromiumcontent.so"
+        )
+        private const val CHROMIUM_LIB_MIN_MATCH = 1
 
-    fun detectInstalledBrowsers(filterType: BrowserType? = null): List<BrowserInfo> {
-        val installed = mutableListOf<BrowserInfo>()
-        val pm = context.packageManager
-
-        // 1. Query all apps that can handle http/https intents
-        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-            data = android.net.Uri.parse("https://example.com")
-        }
-        val resolveList = pm.queryIntentActivities(intent, PackageManager.MATCH_ALL)
-        val processedPackages = mutableSetOf<String>()
-
-        for (resolveInfo in resolveList) {
-            val pkg = resolveInfo.activityInfo.packageName
-            if (pkg in processedPackages) continue
-            processedPackages.add(pkg)
-
-            // Skip self
-            if (pkg == context.packageName) continue
-
-            val appName = resolveInfo.loadLabel(pm).toString()
-            val engineType = identifyEngine(pkg)
-
-            // If filtering, allow matches or Unknowns (might be a fork)
-            if (filterType != null && engineType != filterType && engineType != BrowserType.UNKNOWN) {
-                continue
-            }
-
-            installed.add(BrowserInfo(appName, pkg, engineType, true))
-        }
-
-        return installed
+        private const val GECKO_PROFILES_INI = "files/mozilla/profiles.ini"
+        private val CHROMIUM_DATA_MARKERS = listOf(
+            "app_chrome/Default/Preferences",
+            "app_chrome/Local State",
+            "app_chromium/Default/Preferences",
+            "app_user/Default/Preferences"
+        )
     }
 
-    private fun identifyEngine(pkg: String): BrowserType {
-        // Markers for Architecture A (Gecko)
-        val geckoMarkers = listOf(
-            "/data/data/$pkg/files/mozilla/profiles.ini",
-            "/data/user/0/$pkg/files/mozilla/profiles.ini"
-        )
-        for (path in geckoMarkers) {
-            if (java.io.File(path).exists()) return BrowserType.FIREFOX
+    fun detectInstalledBrowsers(engineFilter: BrowserType? = null): List<BrowserInfo> {
+        val candidates = findBrowserCandidates()
+        val webViewPackages = getWebViewProviderPackages()
+        val results = mutableListOf<BrowserInfo>()
+
+        for (candidate in candidates) {
+            val pkg = candidate.activityInfo.packageName
+            if (pkg in webViewPackages) continue
+
+            val engine = detectEngine(pkg)
+            if (engine == BrowserType.UNKNOWN) continue
+            if (engineFilter != null && engine != engineFilter) continue
+
+            val appLabel = candidate.loadLabel(context.packageManager).toString()
+            results.add(BrowserInfo(appLabel, pkg, engine, true))
         }
 
-        // Fallback: Check native libraries if root allowed or via public path
-        // For simplicity in this logic, we use RootHelper to check if markers exist if normal File access fails
-        val rootResult = RootHelper.executeCommand("ls /data/data/$pkg/files/mozilla/profiles.ini")
-        if (rootResult.success) return BrowserType.FIREFOX
+        return results.sortedBy { it.name.lowercase() }
+    }
 
-        // Markers for Architecture B (Chromium)
-        val chromiumMarkers = listOf(
-            "/data/data/$pkg/app_chrome",
-            "/data/data/$pkg/app_chromium",
-            "/data/user/0/$pkg/app_chrome",
-            "/data/user/0/$pkg/app_chromium"
-        )
-        for (path in chromiumMarkers) {
-            if (java.io.File(path).exists()) return BrowserType.CHROMIUM
-        }
-        
-        val rootChromium = RootHelper.executeCommand("ls -d /data/data/$pkg/app_chrome /data/data/$pkg/app_chromium")
-        if (rootChromium.success) return BrowserType.CHROMIUM
+    private fun findBrowserCandidates(): List<ResolveInfo> {
+        val pm = context.packageManager
+        val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com"))
+        val webHandlers = pm.queryIntentActivities(webIntent, PackageManager.MATCH_ALL)
+        val webHandlerPackages = webHandlers.map { it.activityInfo.packageName }.toSet()
 
-        // Fallback to name-based guessing for apps not yet launched
-        val lowPkg = pkg.lowercase()
-        return when {
-            lowPkg.contains("firefox") || lowPkg.contains("fennec") || lowPkg.contains("fenix") || 
-            lowPkg.contains("iceraven") || lowPkg.contains("mull") -> BrowserType.FIREFOX
-            lowPkg.contains("chrome") || lowPkg.contains("chromium") || lowPkg.contains("brave") || 
-            lowPkg.contains("opera") || lowPkg.contains("vivaldi") || lowPkg.contains("edge") -> BrowserType.CHROMIUM
-            else -> BrowserType.UNKNOWN
+        val launcherIntent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
+        val launcherApps = pm.queryIntentActivities(launcherIntent, 0)
+        val launcherPackages = launcherApps.map { it.activityInfo.packageName }.toSet()
+
+        val validPackages = webHandlerPackages.intersect(launcherPackages)
+        return webHandlers.filter { it.activityInfo.packageName in validPackages }
+            .distinctBy { it.activityInfo.packageName }
+    }
+
+    private fun getWebViewProviderPackages(): Set<String> {
+        val packages = mutableSetOf<String>()
+        try {
+            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", "dumpsys webviewupdate 2>/dev/null"))
+            val output = process.inputStream.bufferedReader().readText()
+            process.waitFor()
+            Regex("""packageName\s*[=:]\s*(\S+)""").findAll(output).forEach { packages.add(it.groupValues[1].trim()) }
+        } catch (_: Exception) {}
+        return packages
+    }
+
+    private fun detectEngine(packageName: String): BrowserType {
+        // 1. Native Libs
+        val nativeEngine = detectEngineByNativeLibs(packageName)
+        if (nativeEngine != BrowserType.UNKNOWN) return nativeEngine
+
+        // 2. Data Dir
+        val dataEngine = detectEngineByDataDir(packageName)
+        if (dataEngine != BrowserType.UNKNOWN) return dataEngine
+
+        return BrowserType.UNKNOWN
+    }
+
+    private fun detectEngineByNativeLibs(packageName: String): BrowserType {
+        val pm = context.packageManager
+        val apkPaths = mutableListOf<String>()
+        try {
+            val appInfo = pm.getApplicationInfo(packageName, 0)
+            appInfo.sourceDir?.let { apkPaths.add(it) }
+            appInfo.splitSourceDirs?.forEach { apkPaths.add(it) }
+        } catch (_: Exception) { return BrowserType.UNKNOWN }
+
+        val foundLibs = mutableSetOf<String>()
+        for (path in apkPaths) {
+            try {
+                ZipFile(path).use { zip ->
+                    zip.entries().asSequence().filter { it.name.startsWith("lib/") && it.name.endsWith(".so") }
+                        .forEach { foundLibs.add(it.name.substringAfterLast('/')) }
+                }
+            } catch (_: Exception) {}
         }
+
+        if (foundLibs.count { it in GECKO_NATIVE_LIBS } >= GECKO_LIB_MIN_MATCH) return BrowserType.GECKO
+        if (foundLibs.count { it in CHROMIUM_NATIVE_LIBS } >= CHROMIUM_LIB_MIN_MATCH) return BrowserType.CHROMIUM
+        return BrowserType.UNKNOWN
+    }
+
+    private fun detectEngineByDataDir(packageName: String): BrowserType {
+        val dataDir = "/data/data/$packageName"
+        if (RootHelper.executeCommand("[ -f '$dataDir/$GECKO_PROFILES_INI' ]").success) return BrowserType.GECKO
+        for (marker in CHROMIUM_DATA_MARKERS) {
+            if (RootHelper.executeCommand("[ -f '$dataDir/$marker' ]").success) return BrowserType.CHROMIUM
+        }
+        return BrowserType.UNKNOWN
     }
 
     fun getCompatibleTargets(source: BrowserInfo, allBrowsers: List<BrowserInfo>): List<BrowserInfo> {
-        // Be permissive: show ALL other browsers. The engine check happens during transfer.
         return allBrowsers.filter { it.packageName != source.packageName }
-    }
-
-    private fun isPackageInstalled(packageName: String): Boolean {
-        return try {
-            context.packageManager.getPackageInfo(packageName, 0)
-            true
-        } catch (e: PackageManager.NameNotFoundException) {
-            false
-        }
     }
 }
