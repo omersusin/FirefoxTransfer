@@ -26,7 +26,18 @@ jobs:
         validate-wrappers: false
 
     - name: Ensure Gradle Wrapper
-      run: gradle wrapper --gradle-version 8.6
+      run: |
+        gradle wrapper --gradle-version 8.6
+        chmod +x gradlew
+        
+        # If gradlew or wrapper jar was missing/corrupted, commit them once
+        if [ ! -z "$(git status --porcelain gradle/ wrapper/ gradlew)" ]; then
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add gradle/ gradlew
+          git commit -m "Restore missing/corrupted Gradle wrapper files"
+          git push || echo "Push failed, continuing build..."
+        fi
 
     - name: Prepare Keystore
       run: |
