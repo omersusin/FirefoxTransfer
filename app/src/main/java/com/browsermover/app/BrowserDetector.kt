@@ -55,53 +55,80 @@ class BrowserDetector(private val context: Context) {
 
     fun detectInstalledBrowsers(filterType: BrowserType? = null): List<BrowserInfo> {
         val installed = mutableListOf<BrowserInfo>()
+        val pm = context.packageManager
 
-        val list = if (filterType != null) {
-            knownBrowsers.filter { it.type == filterType }
-        } else {
-            knownBrowsers
+        // 1. Query all apps that can handle http/https intents
+        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+            data = android.net.Uri.parse("https://example.com")
         }
+        val resolveList = pm.queryIntentActivities(intent, PackageManager.MATCH_ALL)
+        val processedPackages = mutableSetOf<String>()
 
-        for (b in list) {
-            if (isPackageInstalled(b.packageName)) {
-                installed.add(b.copy(isInstalled = true))
+        for (resolveInfo in resolveList) {
+            val pkg = resolveInfo.activityInfo.packageName
+            if (pkg in processedPackages) continue
+            processedPackages.add(pkg)
+
+            // Skip self
+            if (pkg == context.packageName) continue
+
+            val appName = resolveInfo.loadLabel(pm).toString()
+            val engineType = identifyEngine(pkg)
+
+            // If filtering, allow matches or Unknowns (might be a fork)
+            if (filterType != null && engineType != filterType && engineType != BrowserType.UNKNOWN) {
+                continue
             }
-        }
 
-        // Auto-detect unknown browsers via intent query
-        try {
-            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
-            intent.data = android.net.Uri.parse("https://example.com")
-            val resolveList = context.packageManager.queryIntentActivities(intent, 0)
-            val knownPkgs = knownBrowsers.map { it.packageName }.toSet()
-
-            for (info in resolveList) {
-                val pkg = info.activityInfo.packageName
-                if (pkg in knownPkgs) continue
-                if (installed.any { it.packageName == pkg }) continue
-
-                val appName = try {
-                    val ai = context.packageManager.getApplicationInfo(pkg, 0)
-                    context.packageManager.getApplicationLabel(ai).toString()
-                } catch (e: Exception) { pkg }
-
-                // Default to UNKNOWN type, user can still try manual
-                val type = BrowserType.UNKNOWN
-                if (filterType != null && type != filterType) continue
-
-                installed.add(BrowserInfo("$appName (Detected)", pkg, type, true))
-            }
-        } catch (e: Exception) {
-            // Ignore
+            installed.add(BrowserInfo(appName, pkg, engineType, true))
         }
 
         return installed
     }
 
-    fun getCompatibleTargets(source: BrowserInfo, allBrowsers: List<BrowserInfo>): List<BrowserInfo> {
-        return allBrowsers.filter {
-            it.packageName != source.packageName && it.type == source.type
+    private fun identifyEngine(pkg: String): BrowserType {
+        // Markers for Architecture A (Gecko)
+        val geckoMarkers = listOf(
+            "/data/data/$pkg/files/mozilla/profiles.ini",
+            "/data/user/0/$pkg/files/mozilla/profiles.ini"
+        )
+        for (path in geckoMarkers) {
+            if (java.io.File(path).exists()) return BrowserType.FIREFOX
         }
+
+        // Fallback: Check native libraries if root allowed or via public path
+        // For simplicity in this logic, we use RootHelper to check if markers exist if normal File access fails
+        val rootResult = RootHelper.executeCommand("ls /data/data/$pkg/files/mozilla/profiles.ini")
+        if (rootResult.success) return BrowserType.FIREFOX
+
+        // Markers for Architecture B (Chromium)
+        val chromiumMarkers = listOf(
+            "/data/data/$pkg/app_chrome",
+            "/data/data/$pkg/app_chromium",
+            "/data/user/0/$pkg/app_chrome",
+            "/data/user/0/$pkg/app_chromium"
+        )
+        for (path in chromiumMarkers) {
+            if (java.io.File(path).exists()) return BrowserType.CHROMIUM
+        }
+        
+        val rootChromium = RootHelper.executeCommand("ls -d /data/data/$pkg/app_chrome /data/data/$pkg/app_chromium")
+        if (rootChromium.success) return BrowserType.CHROMIUM
+
+        // Fallback to name-based guessing for apps not yet launched
+        val lowPkg = pkg.lowercase()
+        return when {
+            lowPkg.contains("firefox") || lowPkg.contains("fennec") || lowPkg.contains("fenix") || 
+            lowPkg.contains("iceraven") || lowPkg.contains("mull") -> BrowserType.FIREFOX
+            lowPkg.contains("chrome") || lowPkg.contains("chromium") || lowPkg.contains("brave") || 
+            lowPkg.contains("opera") || lowPkg.contains("vivaldi") || lowPkg.contains("edge") -> BrowserType.CHROMIUM
+            else -> BrowserType.UNKNOWN
+        }
+    }
+
+    fun getCompatibleTargets(source: BrowserInfo, allBrowsers: List<BrowserInfo>): List<BrowserInfo> {
+        // Be permissive: show ALL other browsers. The engine check happens during transfer.
+        return allBrowsers.filter { it.packageName != source.packageName }
     }
 
     private fun isPackageInstalled(packageName: String): Boolean {
