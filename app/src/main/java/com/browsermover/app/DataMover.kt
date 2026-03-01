@@ -105,10 +105,18 @@ class DataMover {
 
             appendLine("echo STEP=Cleaning_crash_triggers")
             appendLine("find \"\$TGT_DIR\" -type d \\( -name 'cache2' -o -name 'startupCache' -o -name 'shader-cache' \\) -exec rm -rf {} + 2>/dev/null")
-            appendLine("find \"\$TGT_DIR\" -type f \\( -name 'compatibility.ini' -o -name 'addonStartup.json.lz4' -o -name '.parentlock' -o -name 'lock' -o -name '*-wal' -o -name '*-shm' \\) -delete 2>/dev/null")
+            
+            // DEEP SESSION CLEAN: Fixes "Expected a name but was BEGIN_ARRAY"
+            appendLine("find \"\$TGT_DIR\" -type f \\( -name 'sessionstore.jsonlz4' -o -name 'recovery.jsonlz4' -o -name 'compatibility.ini' -o -name 'addonStartup.json.lz4' -o -name '.parentlock' -o -name 'lock' \\) -delete 2>/dev/null")
+            appendLine("rm -f \"\$TGT_DIR/shared_prefs/GeckoSessionState\"*.xml 2>/dev/null")
+            appendLine("")
 
             appendLine("echo STEP=Patching_paths")
-            appendLine("find \"\$TGT_DIR\" -type f \\( -name '*.ini' -o -name '*.js' -o -name '*.json' -o -name '*.xml' \\) | while read f; do sed -i \"s|\$SRC_PKG|\$TGT_PKG|g\" \"\$f\" 2>/dev/null; done")
+            appendLine("find \"\$TGT_DIR\" -type f \\( -name '*.ini' -o -name '*.js' -o -name '*.json' -o -name '*.xml' \\) | while read f; do")
+            appendLine("  grep -ql \"\$SRC_PKG\" \"\$f\" && sed -i \"s|\$SRC_PKG|\$TGT_PKG|g\" \"\$f\"")
+            appendLine("done")
+            // Patch user.js specifically if exists
+            appendLine("find \"\$TGT_DIR\" -name 'user.js' -exec sed -i \"s|\$SRC_PKG|\$TGT_PKG|g\" {} + 2>/dev/null")
 
             appendLine("echo STEP=Patching_databases")
             appendLine("find \"\$TGT_DIR/databases\" -type f -name '*.db' | while read db; do")

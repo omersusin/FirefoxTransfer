@@ -122,6 +122,7 @@ class BrowserDetector(private val context: Context) {
     }
 
     fun getCompatibleTargets(source: BrowserInfo, allBrowsers: List<BrowserInfo>): List<BrowserInfo> {
-        return allBrowsers.filter { it.packageName != source.packageName }
+        // Only show browsers of the same family (GECKO -> GECKO, CHROMIUM -> CHROMIUM)
+        return allBrowsers.filter { it.packageName != source.packageName && it.type == source.type }
     }
 }
