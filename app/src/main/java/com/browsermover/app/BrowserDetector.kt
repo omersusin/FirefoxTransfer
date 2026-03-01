@@ -56,25 +56,43 @@ class BrowserDetector(private val context: Context) {
     fun detectInstalledBrowsers(filterType: BrowserType? = null): List<BrowserInfo> {
         val installed = mutableListOf<BrowserInfo>()
 
-        val browsersToCheck = if (filterType != null) {
+        val list = if (filterType != null) {
             knownBrowsers.filter { it.type == filterType }
         } else {
             knownBrowsers
         }
 
-        for (browser in browsersToCheck) {
-            if (isPackageInstalled(browser.packageName)) {
-                installed.add(browser.copy(isInstalled = true))
+        for (b in list) {
+            if (isPackageInstalled(b.packageName)) {
+                installed.add(b.copy(isInstalled = true))
             }
         }
 
-        if (RootHelper.isRootAvailable()) {
-            val unknown = autoDetectUnknown(filterType)
-            for (browser in unknown) {
-                if (installed.none { it.packageName == browser.packageName }) {
-                    installed.add(browser)
-                }
+        // Auto-detect unknown browsers via intent query
+        try {
+            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
+            intent.data = android.net.Uri.parse("https://example.com")
+            val resolveList = context.packageManager.queryIntentActivities(intent, 0)
+            val knownPkgs = knownBrowsers.map { it.packageName }.toSet()
+
+            for (info in resolveList) {
+                val pkg = info.activityInfo.packageName
+                if (pkg in knownPkgs) continue
+                if (installed.any { it.packageName == pkg }) continue
+
+                val appName = try {
+                    val ai = context.packageManager.getApplicationInfo(pkg, 0)
+                    context.packageManager.getApplicationLabel(ai).toString()
+                } catch (e: Exception) { pkg }
+
+                // Default to UNKNOWN type, user can still try manual
+                val type = BrowserType.UNKNOWN
+                if (filterType != null && type != filterType) continue
+
+                installed.add(BrowserInfo("$appName (Detected)", pkg, type, true))
             }
+        } catch (e: Exception) {
+            // Ignore
         }
 
         return installed
@@ -92,54 +110,6 @@ class BrowserDetector(private val context: Context) {
             true
         } catch (e: PackageManager.NameNotFoundException) {
             false
-        }
-    }
-
-    private fun autoDetectUnknown(filterType: BrowserType?): List<BrowserInfo> {
-        val detected = mutableListOf<BrowserInfo>()
-        val result = RootHelper.executeCommand("ls /data/data/")
-        if (!result.success) return detected
-
-        val knownPkgs = knownBrowsers.map { it.packageName }.toSet()
-        val packages = result.output.lines().filter { it.isNotBlank() }
-
-        for (pkg in packages) {
-            if (pkg in knownPkgs) continue
-            if (!isPackageInstalled(pkg)) continue
-
-            val type = detectType(pkg)
-            if (type == BrowserType.UNKNOWN) continue
-            if (filterType != null && type != filterType) continue
-
-            val name = getAppName(pkg) ?: pkg
-            detected.add(BrowserInfo("$name (Auto)", pkg, type, true))
-        }
-
-        return detected
-    }
-
-    private fun detectType(pkg: String): BrowserType {
-        val dir = "/data/data/$pkg"
-
-        val ffCheck = RootHelper.executeCommand(
-            "test -d $dir/files/mozilla && echo FF || test -f $dir/lib/libxul.so && echo FF || echo NO"
-        )
-        if (ffCheck.output.contains("FF")) return BrowserType.FIREFOX
-
-        val crCheck = RootHelper.executeCommand(
-            "test -d $dir/app_chrome && echo CR || test -f $dir/lib/libchrome.so && echo CR || echo NO"
-        )
-        if (crCheck.output.contains("CR")) return BrowserType.CHROMIUM
-
-        return BrowserType.UNKNOWN
-    }
-
-    private fun getAppName(packageName: String): String? {
-        return try {
-            val ai = context.packageManager.getApplicationInfo(packageName, 0)
-            context.packageManager.getApplicationLabel(ai).toString()
-        } catch (e: Exception) {
-            null
         }
     }
 }

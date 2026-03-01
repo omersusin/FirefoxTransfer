@@ -2,6 +2,10 @@ package com.browsermover.app
 
 import android.os.Handler
 import android.os.Looper
+import java.io.BufferedReader
+import java.io.DataOutputStream
+import java.io.InputStreamReader
+import java.util.concurrent.TimeUnit
 
 class DataMover {
 
@@ -17,86 +21,6 @@ class DataMover {
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    private fun findDataDir(packageName: String, listener: ProgressListener): String? {
-
-        // Method 1: dumpsys package -> dataDir
-        postProgress(listener, "  Method 1: dumpsys package...")
-        val dumpResult = RootHelper.executeCommand(
-            "dumpsys package $packageName"
-        )
-        if (dumpResult.success) {
-            for (line in dumpResult.output.lines()) {
-                if (line.trimStart().startsWith("dataDir=")) {
-                    val path = line.trimStart().removePrefix("dataDir=").trim()
-                    postProgress(listener, "  dumpsys found: $path")
-                    if (path.isNotBlank() && path.startsWith("/data")) {
-                        // Verify it exists
-                        val verify = RootHelper.executeCommand("ls -d $path 2>/dev/null")
-                        if (verify.output.trim() == path) {
-                            postProgress(listener, "  Verified: $path EXISTS")
-                            return path
-                        }
-                    }
-                }
-            }
-        }
-
-        // Method 2: Direct path check - /data/user/0/
-        postProgress(listener, "  Method 2: checking /data/user/0/...")
-        val path2 = "/data/user/0/$packageName"
-        val check2 = RootHelper.executeCommand("ls -d $path2 2>/dev/null")
-        if (check2.output.trim() == path2) {
-            postProgress(listener, "  Found: $path2")
-            return path2
-        }
-
-        // Method 3: Direct path check - /data/data/
-        postProgress(listener, "  Method 3: checking /data/data/...")
-        val path3 = "/data/data/$packageName"
-        val check3 = RootHelper.executeCommand("ls -d $path3 2>/dev/null")
-        if (check3.output.trim() == path3) {
-            postProgress(listener, "  Found: $path3")
-            return path3
-        }
-
-        // Method 4: Use pm to get install location, derive data path
-        postProgress(listener, "  Method 4: deriving from pm path...")
-        val pmResult = RootHelper.executeCommand("pm path $packageName")
-        if (pmResult.success && pmResult.output.contains("package:")) {
-            // If app is installed, data dir SHOULD be /data/user/0/pkg
-            // Maybe the app was never opened - let's create data dir
-            postProgress(listener, "  App installed but no data dir. Trying to create...")
-            RootHelper.executeCommand("mkdir -p $path2")
-            val recheck = RootHelper.executeCommand("ls -d $path2 2>/dev/null")
-            if (recheck.output.trim() == path2) {
-                // Set correct ownership
-                val uidResult = RootHelper.executeCommand(
-                    "dumpsys package $packageName"
-                )
-                val uidMatch = Regex("userId=(\\d+)").find(uidResult.output)
-                if (uidMatch != null) {
-                    val uid = uidMatch.groupValues[1].toInt()
-                    val userName = "u0_a${uid - 10000}"
-                    RootHelper.executeCommand("chown -R $userName:$userName $path2")
-                    RootHelper.executeCommand("chmod 771 $path2")
-                }
-                postProgress(listener, "  Created and configured: $path2")
-                return path2
-            }
-        }
-
-        // Method 5: List all under /data/user/0/ and grep
-        postProgress(listener, "  Method 5: listing /data/user/0/...")
-        val listResult = RootHelper.executeCommand("ls /data/user/0/ | grep '$packageName'")
-        if (listResult.success && listResult.output.trim() == packageName) {
-            postProgress(listener, "  Found via listing: /data/user/0/$packageName")
-            return "/data/user/0/$packageName"
-        }
-
-        postProgress(listener, "  All methods failed!")
-        return null
-    }
-
     fun moveData(
         source: BrowserInfo,
         target: BrowserInfo,
@@ -105,125 +29,196 @@ class DataMover {
     ) {
         Thread {
             try {
-                postProgress(listener, "Checking root access...")
-                if (!RootHelper.isRootAvailable()) {
-                    postError(listener, "Root access not found!")
-                    return@Thread
-                }
-                postProgress(listener, "Root access confirmed.")
+                postProgress(listener, "Starting transfer...")
+                postProgress(listener, "From: ${source.name} (${source.packageName})")
+                postProgress(listener, "To: ${target.name} (${target.packageName})")
 
-                // Verify packages are installed
-                postProgress(listener, "Verifying packages...")
-                val srcPm = RootHelper.executeCommand("pm path ${source.packageName}")
-                if (!srcPm.success || srcPm.output.isBlank()) {
-                    postError(listener, "Source package not installed: ${source.packageName}")
-                    return@Thread
-                }
-                postProgress(listener, "Source installed: OK")
+                val srcPkg = source.packageName
+                val dstPkg = target.packageName
 
-                val dstPm = RootHelper.executeCommand("pm path ${target.packageName}")
-                if (!dstPm.success || dstPm.output.isBlank()) {
-                    postError(listener, "Target package not installed: ${target.packageName}")
-                    return@Thread
-                }
-                postProgress(listener, "Target installed: OK")
+                // ALL commands in ONE su session
+                val process = Runtime.getRuntime().exec("su")
+                val os = DataOutputStream(process.outputStream)
 
-                // Find source data directory
-                postProgress(listener, "Finding source data directory...")
-                val srcDir = findDataDir(source.packageName, listener)
-                if (srcDir == null) {
-                    postError(listener, "Could not find source data directory!\nPackage: ${source.packageName}\n\nMake sure you have opened ${source.name} at least once.")
-                    return@Thread
-                }
-                postProgress(listener, "Source dir: $srcDir")
+                fun w(s: String) = os.writeBytes(s + "\n")
 
-                // Check source has actual data
-                val srcContent = RootHelper.executeCommand("ls $srcDir/")
-                if (srcContent.output.isBlank()) {
-                    postError(listener, "Source data directory is empty!\n$srcDir\n\nOpen ${source.name} first to generate data.")
-                    return@Thread
-                }
-                postProgress(listener, "Source has data: ${srcContent.output.lines().size} items")
+                // ---- Find source dir ----
+                w("echo STEP_FIND_SRC")
+                w("SRC_DIR=\"\"")
+                w("for d in /data/user/0/$srcPkg /data/data/$srcPkg; do")
+                w("  if [ -d \"\$d\" ]; then SRC_DIR=\"\$d\"; break; fi")
+                w("done")
+                w("echo SRCDIR=\$SRC_DIR")
 
-                // Find target data directory
-                postProgress(listener, "Finding target data directory...")
-                val dstDir = findDataDir(target.packageName, listener)
-                if (dstDir == null) {
-                    postError(listener, "Could not find target data directory!\nPackage: ${target.packageName}\n\nPlease open ${target.name} once, then try again.")
-                    return@Thread
-                }
-                postProgress(listener, "Target dir: $dstDir")
+                // ---- Find target dir ----
+                w("echo STEP_FIND_DST")
+                w("DST_DIR=\"\"")
+                w("for d in /data/user/0/$dstPkg /data/data/$dstPkg; do")
+                w("  if [ -d \"\$d\" ]; then DST_DIR=\"\$d\"; break; fi")
+                w("done")
+                w("echo DSTDIR=\$DST_DIR")
 
-                // Force stop both browsers
-                postProgress(listener, "Stopping browsers...")
-                RootHelper.executeCommand("am force-stop ${source.packageName}")
-                RootHelper.executeCommand("am force-stop ${target.packageName}")
-                Thread.sleep(1500)
-                postProgress(listener, "Browsers stopped.")
+                // ---- Validate ----
+                w("if [ -z \"\$SRC_DIR\" ]; then echo ERROR_NO_SRC; exit 1; fi")
+                w("if [ -z \"\$DST_DIR\" ]; then echo ERROR_NO_DST; exit 1; fi")
 
-                // Backup target
+                // ---- Show source contents (debug) ----
+                w("echo SRC_CONTENT_START")
+                w("ls \$SRC_DIR/ 2>&1 | head -20")
+                w("echo SRC_CONTENT_END")
+
+                // ---- Get owner BEFORE any changes ----
+                w("echo STEP_GET_OWNER")
+                w("UGROUP=\$(ls -ld \$DST_DIR | awk '{print \$3}')")
+                w("UGROUPG=\$(ls -ld \$DST_DIR | awk '{print \$4}')")
+                w("echo OWNER=\$UGROUP:\$UGROUPG")
+
+                // ---- If owner is root or empty, try dumpsys ----
+                w("if [ -z \"\$UGROUP\" ] || [ \"\$UGROUP\" = \"root\" ]; then")
+                w("  DUMP_UID=\$(dumpsys package $dstPkg | grep 'userId=' | head -1 | sed 's/.*userId=//' | sed 's/[^0-9].*//')")
+                w("  if [ -n \"\$DUMP_UID\" ]; then")
+                w("    CALC=\$((\$DUMP_UID - 10000))")
+                w("    UGROUP=\"u0_a\$CALC\"")
+                w("    UGROUPG=\"u0_a\$CALC\"")
+                w("    echo OWNER_FROM_DUMP=\$UGROUP")
+                w("  fi")
+                w("fi")
+
+                // ---- Stop both apps ----
+                w("echo STEP_STOP")
+                w("am force-stop $srcPkg 2>/dev/null")
+                w("am force-stop $dstPkg 2>/dev/null")
+                w("sleep 2")
+
+                // ---- Backup ----
                 if (backupFirst) {
-                    postProgress(listener, "Creating backup of target...")
-                    RootHelper.executeCommand("mkdir -p $BACKUP_DIR")
-                    val ts = System.currentTimeMillis()
-                    val bkFile = "$BACKUP_DIR/${target.packageName}_$ts.tar.gz"
-                    val bk = RootHelper.executeCommand("tar -czf $bkFile -C $dstDir . 2>&1")
-                    if (bk.success) {
-                        postProgress(listener, "Backup saved: $bkFile")
-                    } else {
-                        postProgress(listener, "Backup warning: ${bk.error.take(200)}")
+                    w("echo STEP_BACKUP")
+                    w("mkdir -p $BACKUP_DIR")
+                    w("TS=\$(date +%s)")
+                    w("tar -czf $BACKUP_DIR/${dstPkg}_\$TS.tar.gz -C \$DST_DIR . 2>/dev/null && echo BACKUP_OK || echo BACKUP_FAIL")
+                }
+
+                // ---- Clear target ----
+                w("echo STEP_CLEAR")
+                w("rm -rf \$DST_DIR/*")
+
+                // ---- Copy data ----
+                w("echo STEP_COPY")
+                w("cp -a \$SRC_DIR/* \$DST_DIR/ 2>&1 | tail -5")
+                w("echo COPY_DONE")
+
+                // ---- Fix ownership ----
+                w("echo STEP_CHOWN")
+                w("if [ -n \"\$UGROUP\" ] && [ \"\$UGROUP\" != \"root\" ]; then")
+                w("  chown -R \$UGROUP:\$UGROUPG \$DST_DIR")
+                w("  echo CHOWN_OK=\$UGROUP")
+                w("else")
+                w("  echo CHOWN_SKIP")
+                w("fi")
+
+                // ---- SELinux ----
+                w("echo STEP_SELINUX")
+                w("restorecon -RF \$DST_DIR 2>/dev/null")
+
+                // ---- Verify ----
+                w("echo STEP_VERIFY")
+                w("echo DST_CONTENT_START")
+                w("ls \$DST_DIR/ 2>&1 | head -15")
+                w("echo DST_CONTENT_END")
+
+                w("echo TRANSFER_COMPLETE")
+                w("exit")
+                os.flush()
+                os.close()
+
+                // Read output
+                val stdout = BufferedReader(InputStreamReader(process.inputStream))
+                val stderr = BufferedReader(InputStreamReader(process.errorStream))
+                val output = stdout.readText()
+                val error = stderr.readText()
+                stdout.close()
+                stderr.close()
+                process.waitFor(180, TimeUnit.SECONDS)
+
+                // Parse output
+                var srcDir = ""
+                var dstDir = ""
+                val srcFiles = mutableListOf<String>()
+                val dstFiles = mutableListOf<String>()
+                var inSrcContent = false
+                var inDstContent = false
+
+                for (line in output.lines()) {
+                    if (line.isBlank()) continue
+
+                    when {
+                        line.startsWith("SRCDIR=") -> {
+                            srcDir = line.removePrefix("SRCDIR=")
+                            postProgress(listener, "Source: $srcDir")
+                        }
+                        line.startsWith("DSTDIR=") -> {
+                            dstDir = line.removePrefix("DSTDIR=")
+                            postProgress(listener, "Target: $dstDir")
+                        }
+                        line == "ERROR_NO_SRC" -> {
+                            postError(listener,
+                                "Source data directory not found!\n\n" +
+                                "Package: $srcPkg\n\n" +
+                                "Please open ${source.name} at least once first.")
+                            return@Thread
+                        }
+                        line == "ERROR_NO_DST" -> {
+                            postError(listener,
+                                "Target data directory not found!\n\n" +
+                                "Package: $dstPkg\n\n" +
+                                "Please open ${target.name} once, close it, then try again.")
+                            return@Thread
+                        }
+                        line == "SRC_CONTENT_START" -> inSrcContent = true
+                        line == "SRC_CONTENT_END" -> {
+                            inSrcContent = false
+                            postProgress(listener, "Source data (${srcFiles.size} items): ${srcFiles.take(5).joinToString(", ")}")
+                        }
+                        inSrcContent -> srcFiles.add(line)
+                        line.startsWith("OWNER=") -> postProgress(listener, "Original owner: ${line.removePrefix("OWNER=")}")
+                        line.startsWith("OWNER_FROM_DUMP=") -> postProgress(listener, "Owner via UID: ${line.removePrefix("OWNER_FROM_DUMP=")}")
+                        line == "STEP_STOP" -> postProgress(listener, "Stopping browsers...")
+                        line == "STEP_BACKUP" -> postProgress(listener, "Creating backup...")
+                        line == "BACKUP_OK" -> postProgress(listener, "✅ Backup saved")
+                        line == "BACKUP_FAIL" -> postProgress(listener, "⚠️ Backup failed, continuing...")
+                        line == "STEP_CLEAR" -> postProgress(listener, "Clearing target...")
+                        line == "STEP_COPY" -> postProgress(listener, "Copying data... (please wait)")
+                        line == "COPY_DONE" -> postProgress(listener, "Copy complete")
+                        line == "STEP_CHOWN" -> postProgress(listener, "Fixing ownership...")
+                        line.startsWith("CHOWN_OK=") -> postProgress(listener, "✅ Owner set: ${line.removePrefix("CHOWN_OK=")}")
+                        line == "CHOWN_SKIP" -> postProgress(listener, "⚠️ Could not determine owner")
+                        line == "STEP_SELINUX" -> postProgress(listener, "Fixing SELinux...")
+                        line == "DST_CONTENT_START" -> inDstContent = true
+                        line == "DST_CONTENT_END" -> {
+                            inDstContent = false
+                            postProgress(listener, "Target after transfer (${dstFiles.size} items): ${dstFiles.take(5).joinToString(", ")}")
+                        }
+                        inDstContent -> dstFiles.add(line)
+                        line == "TRANSFER_COMPLETE" -> {
+                            postSuccess(listener,
+                                "Transfer successful!\n\n" +
+                                "From: ${source.name}\n($srcDir)\n\n" +
+                                "To: ${target.name}\n($dstDir)\n\n" +
+                                "You can now open ${target.name}.")
+                            return@Thread
+                        }
                     }
                 }
 
-                // Clear target
-                postProgress(listener, "Clearing target data...")
-                RootHelper.executeCommand("rm -rf $dstDir/*")
-                postProgress(listener, "Target cleared.")
-
-                // Copy data
-                postProgress(listener, "Copying data... (this may take a while)")
-                val cpResult = RootHelper.executeCommand("cp -a $srcDir/* $dstDir/")
-                postProgress(listener, "Copy complete. Success: ${cpResult.success}")
-                if (cpResult.error.isNotBlank()) {
-                    postProgress(listener, "Copy notes: ${cpResult.error.take(300)}")
+                if (!output.contains("TRANSFER_COMPLETE")) {
+                    postError(listener,
+                        "Transfer may have failed.\n\n" +
+                        "Shell output:\n${output.take(1500)}\n\n" +
+                        "Errors:\n${error.take(500)}")
                 }
-
-                // Fix ownership using dumpsys
-                postProgress(listener, "Fixing ownership...")
-                val dumpTarget = RootHelper.executeCommand("dumpsys package ${target.packageName}")
-                val uidMatch = Regex("userId=(\\d+)").find(dumpTarget.output)
-
-                if (uidMatch != null) {
-                    val uid = uidMatch.groupValues[1].toInt()
-                    val user = "u0_a${uid - 10000}"
-                    RootHelper.executeCommand("chown -R $user:$user $dstDir")
-                    postProgress(listener, "Ownership fixed: $user (uid=$uid)")
-                } else {
-                    postProgress(listener, "Warning: Could not determine UID, trying alternative...")
-                    // Get owner of the directory before we changed it
-                    val lsResult = RootHelper.executeCommand("ls -ld /data/user/0/ | head -1")
-                    postProgress(listener, "Fallback: ${lsResult.output}")
-                }
-
-                // Fix SELinux context
-                postProgress(listener, "Fixing SELinux context...")
-                RootHelper.executeCommand("restorecon -RF $dstDir 2>/dev/null")
-
-                // Verify
-                postProgress(listener, "Verifying...")
-                val verify = RootHelper.executeCommand("ls $dstDir/ | head -15")
-                postProgress(listener, "Target after transfer:\n${verify.output}")
-
-                postSuccess(
-                    listener,
-                    "Transfer successful!\n\n" +
-                    "Source: ${source.name}\n($srcDir)\n\n" +
-                    "Target: ${target.name}\n($dstDir)\n\n" +
-                    "You can now open ${target.name}."
-                )
 
             } catch (e: Exception) {
-                postError(listener, "Unexpected error:\n${e.message}")
+                postError(listener, "Error: ${e.message}")
             }
         }.start()
     }
