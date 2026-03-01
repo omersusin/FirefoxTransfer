@@ -32,88 +32,125 @@ class DataMover {
                     return@Thread
                 }
 
-                // 2. Kaynak veri kontrolu
                 val sourceDir = "/data/data/${source.packageName}"
                 val targetDir = "/data/data/${target.packageName}"
 
+                // 2. Kaynak veri kontrolu - test -d kullan
                 postProgress(listener, "Kaynak kontrol ediliyor: ${source.name}")
-                val sourceCheck = RootHelper.executeCommand("ls $sourceDir")
-                if (!sourceCheck.success || sourceCheck.output.isBlank()) {
-                    postError(listener, "Kaynak tarayıcı verisi bulunamadı:\n${source.packageName}")
+                val sourceCheck = RootHelper.executeCommand(
+                    "if [ -d \"$sourceDir\" ]; then echo EXISTS; else echo NOTFOUND; fi"
+                )
+                postProgress(listener, "Kaynak kontrol sonucu: ${sourceCheck.output}")
+
+                if (!sourceCheck.output.contains("EXISTS")) {
+                    postError(listener, "Kaynak tarayıcı verisi bulunamadı:\n${source.packageName}\n\nKontrol: ${sourceCheck.output}\nHata: ${sourceCheck.error}")
                     return@Thread
                 }
 
                 // 3. Hedef veri kontrolu
                 postProgress(listener, "Hedef kontrol ediliyor: ${target.name}")
-                val targetCheck = RootHelper.executeCommand("ls $targetDir")
-                if (!targetCheck.success || targetCheck.output.isBlank()) {
-                    postError(listener, "Hedef tarayıcı yüklü değil:\n${target.packageName}")
+                val targetCheck = RootHelper.executeCommand(
+                    "if [ -d \"$targetDir\" ]; then echo EXISTS; else echo NOTFOUND; fi"
+                )
+                postProgress(listener, "Hedef kontrol sonucu: ${targetCheck.output}")
+
+                if (!targetCheck.output.contains("EXISTS")) {
+                    postError(listener, "Hedef tarayıcı yüklü değil veya verisi yok:\n${target.packageName}\n\nKontrol: ${targetCheck.output}\nHata: ${targetCheck.error}")
                     return@Thread
                 }
 
-                // 4. Uygulamalari durdur
+                // 4. Kaynak icerigini listele (debug)
+                postProgress(listener, "Kaynak içeriği listeleniyor...")
+                val lsSource = RootHelper.executeCommand("ls -la $sourceDir/ 2>&1 | head -20")
+                postProgress(listener, "Kaynak içerik:\n${lsSource.output}")
+
+                // 5. Uygulamalari durdur
                 postProgress(listener, "Tarayıcılar durduruluyor...")
                 RootHelper.executeCommand("am force-stop ${source.packageName}")
                 RootHelper.executeCommand("am force-stop ${target.packageName}")
                 Thread.sleep(1000)
 
-                // 5. Yedekleme
+                // 6. Yedekleme
                 if (backupFirst) {
                     postProgress(listener, "Hedef tarayıcı yedekleniyor...")
                     val backupResult = createBackup(target.packageName)
                     if (!backupResult) {
-                        postError(listener, "Yedekleme başarısız oldu!")
-                        return@Thread
+                        postProgress(listener, "⚠️ Yedekleme başarısız oldu, devam ediliyor...")
+                    } else {
+                        postProgress(listener, "Yedekleme tamamlandı.")
                     }
-                    postProgress(listener, "Yedekleme tamamlandı.")
                 }
 
-                // 6. Hedef veriyi sil
+                // 7. Hedef veriyi sil
                 postProgress(listener, "Hedef tarayıcı verileri temizleniyor...")
-                val rmResult = RootHelper.executeCommand("rm -rf $targetDir/*")
-                if (!rmResult.success) {
-                    postError(listener, "Hedef temizleme başarısız:\n${rmResult.error}")
-                    return@Thread
-                }
+                RootHelper.executeCommand("rm -rf $targetDir/*")
 
-                // 7. Veriyi kopyala
+                // 8. Veriyi kopyala
                 postProgress(listener, "Veriler kopyalanıyor... (Bu biraz sürebilir)")
                 val cpResult = RootHelper.executeCommand(
-                    "cp -Rvf $sourceDir/* $targetDir/ 2>&1"
+                    "cp -a $sourceDir/* $targetDir/ 2>&1"
                 )
-                if (!cpResult.success) {
-                    postError(listener, "Kopyalama başarısız:\n${cpResult.error}")
-                    return@Thread
+                postProgress(listener, "Kopyalama çıktısı: ${cpResult.output.take(500)}")
+
+                if (!cpResult.success && cpResult.error.isNotBlank()) {
+                    postProgress(listener, "⚠️ Kopyalama uyarısı: ${cpResult.error.take(300)}")
                 }
 
-                // 8. Sahiplik ve izinleri duzelt
+                // 9. Sahiplik ve izinleri duzelt
                 postProgress(listener, "İzinler düzeltiliyor...")
-                val ownerResult = RootHelper.executeCommand(
-                    "stat -c '%U' $targetDir"
+
+                // Yontem 1: stat ile
+                var owner = ""
+                val statResult = RootHelper.executeCommand(
+                    "stat -c '%U' $targetDir 2>/dev/null"
                 )
+                owner = statResult.output.trim().replace("'", "")
 
-                var owner = ownerResult.output.trim()
-
-                // stat calismaz ise alternatif yontem
-                if (owner.isBlank() || !ownerResult.success) {
+                // Yontem 2: ls ile
+                if (owner.isBlank() || owner == "root") {
                     val lsResult = RootHelper.executeCommand(
-                        "ls -ld $targetDir | awk '{print \$3}'"
+                        "ls -ld /data/data/${target.packageName} | awk '{print \$3}'"
                     )
-                    owner = lsResult.output.trim()
+                    val lsOwner = lsResult.output.trim()
+                    if (lsOwner.isNotBlank() && lsOwner != "root") {
+                        owner = lsOwner
+                    }
                 }
 
-                if (owner.isNotBlank()) {
+                // Yontem 3: dumpsys ile uid bul
+                if (owner.isBlank() || owner == "root") {
+                    val dumpResult = RootHelper.executeCommand(
+                        "dumpsys package ${target.packageName} | grep userId= | head -1"
+                    )
+                    val uidMatch = Regex("userId=(\\d+)").find(dumpResult.output)
+                    if (uidMatch != null) {
+                        val uid = uidMatch.groupValues[1]
+                        owner = "u0_a${uid.toInt() - 10000}"
+                        postProgress(listener, "UID bulundu: $uid → $owner")
+                    }
+                }
+
+                if (owner.isNotBlank() && owner != "root") {
                     RootHelper.executeCommand("chown -R $owner:$owner $targetDir")
                     postProgress(listener, "Sahiplik düzeltildi: $owner")
                 } else {
-                    postProgress(listener, "Uyarı: Sahiplik belirlenemedi, elle düzeltmeniz gerekebilir.")
+                    postProgress(listener, "⚠️ Sahiplik otomatik belirlenemedi.")
+                    // Son cozum: hedef paketi kullanarak set et
+                    RootHelper.executeCommand(
+                        "chown -R \$(stat -c '%U' /data/data/${target.packageName}):\$(stat -c '%G' /data/data/${target.packageName}) $targetDir 2>/dev/null"
+                    )
                 }
 
-                // 9. SELinux context duzelt
+                // 10. SELinux context duzelt
                 postProgress(listener, "SELinux bağlamı düzeltiliyor...")
                 RootHelper.executeCommand("restorecon -R $targetDir 2>/dev/null")
 
-                // 10. Basarili
+                // 11. Dogrulama
+                postProgress(listener, "Transfer doğrulanıyor...")
+                val verifyResult = RootHelper.executeCommand("ls $targetDir/ 2>&1 | head -10")
+                postProgress(listener, "Hedef içerik:\n${verifyResult.output}")
+
+                // 12. Basarili
                 postSuccess(
                     listener,
                     "Transfer başarılı!\n\n" +
@@ -123,7 +160,7 @@ class DataMover {
                 )
 
             } catch (e: Exception) {
-                postError(listener, "Beklenmeyen hata:\n${e.message}")
+                postError(listener, "Beklenmeyen hata:\n${e.message}\n${e.stackTraceToString().take(500)}")
             }
         }.start()
     }

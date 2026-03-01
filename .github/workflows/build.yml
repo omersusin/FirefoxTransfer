@@ -23,11 +23,22 @@ jobs:
       uses: gradle/gradle-build-action@v3
 
     - name: Generate Gradle Wrapper
-      run: |
-        gradle wrapper --gradle-version 8.6
+      run: gradle wrapper --gradle-version 8.6
 
     - name: Make gradlew executable
       run: chmod +x gradlew
+
+    - name: Generate Keystore
+      run: |
+        keytool -genkeypair \
+          -alias browsermover \
+          -keyalg RSA \
+          -keysize 2048 \
+          -validity 10000 \
+          -keystore app/keystore.jks \
+          -storepass browsermover123 \
+          -keypass browsermover123 \
+          -dname "CN=BrowserDataMover, OU=Dev, O=Dev, L=Unknown, ST=Unknown, C=TR"
 
     - name: Build Debug APK
       run: ./gradlew assembleDebug
