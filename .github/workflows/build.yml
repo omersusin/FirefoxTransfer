@@ -18,42 +18,32 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
+        cache: 'gradle'
 
     - name: Setup Gradle
-      uses: gradle/gradle-build-action@v3
+      uses: gradle/actions/setup-gradle@v4
 
-    - name: Generate Gradle Wrapper
-      run: gradle wrapper --gradle-version 8.6
-
-    - name: Make gradlew executable
-      run: chmod +x gradlew
-
-    - name: Generate Keystore
+    - name: Prepare Keystore
       run: |
-        keytool -genkeypair \
-          -alias browsermover \
-          -keyalg RSA \
-          -keysize 2048 \
-          -validity 10000 \
-          -keystore app/keystore.jks \
-          -storepass browsermover123 \
-          -keypass browsermover123 \
-          -dname "CN=BrowserDataMover, OU=Dev, O=Dev, L=Unknown, ST=Unknown, C=TR"
+        if [ ! -f app/keystore.jks ]; then
+          keytool -genkeypair \
+            -alias browsermover \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -keystore app/keystore.jks \
+            -storepass browsermover123 \
+            -keypass browsermover123 \
+            -dname "CN=BrowserDataMover, OU=Dev, O=Dev, L=Unknown, ST=Unknown, C=TR"
+        fi
 
-    - name: Build Debug APK
-      run: ./gradlew assembleDebug
+    - name: Build APKs
+      run: ./gradlew assembleDebug assembleRelease --no-daemon --parallel --build-cache
 
-    - name: Build Release APK
-      run: ./gradlew assembleRelease
-
-    - name: Upload Debug APK
+    - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: BrowserDataMover-debug
-        path: app/build/outputs/apk/debug/*.apk
-
-    - name: Upload Release APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: BrowserDataMover-release
-        path: app/build/outputs/apk/release/*.apk
+        name: BrowserDataMover-APKs
+        path: |
+          app/build/outputs/apk/debug/*.apk
+          app/build/outputs/apk/release/*.apk
