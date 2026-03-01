@@ -17,40 +17,83 @@ class DataMover {
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    private fun findDataDir(packageName: String): String? {
+    private fun findDataDir(packageName: String, listener: ProgressListener): String? {
+
         // Method 1: dumpsys package -> dataDir
-        val dump = RootHelper.executeCommand(
-            "dumpsys package $packageName | grep 'dataDir=' | head -1"
+        postProgress(listener, "  Method 1: dumpsys package...")
+        val dumpResult = RootHelper.executeCommand(
+            "dumpsys package $packageName"
         )
-        if (dump.success && dump.output.contains("dataDir=")) {
-            val path = dump.output.substringAfter("dataDir=").trim()
-            if (path.isNotBlank()) {
-                val check = RootHelper.executeCommand("test -d '$path' && echo YES || echo NO")
-                if (check.output.contains("YES")) return path
+        if (dumpResult.success) {
+            for (line in dumpResult.output.lines()) {
+                if (line.trimStart().startsWith("dataDir=")) {
+                    val path = line.trimStart().removePrefix("dataDir=").trim()
+                    postProgress(listener, "  dumpsys found: $path")
+                    if (path.isNotBlank() && path.startsWith("/data")) {
+                        // Verify it exists
+                        val verify = RootHelper.executeCommand("ls -d $path 2>/dev/null")
+                        if (verify.output.trim() == path) {
+                            postProgress(listener, "  Verified: $path EXISTS")
+                            return path
+                        }
+                    }
+                }
             }
         }
 
-        // Method 2: Try common paths
-        val paths = listOf(
-            "/data/user/0/$packageName",
-            "/data/data/$packageName",
-            "/data/user_de/0/$packageName",
-            "/mnt/expand/*/user/0/$packageName"
-        )
-
-        for (path in paths) {
-            val check = RootHelper.executeCommand("test -d '$path' && echo YES || echo NO")
-            if (check.output.contains("YES")) return path
+        // Method 2: Direct path check - /data/user/0/
+        postProgress(listener, "  Method 2: checking /data/user/0/...")
+        val path2 = "/data/user/0/$packageName"
+        val check2 = RootHelper.executeCommand("ls -d $path2 2>/dev/null")
+        if (check2.output.trim() == path2) {
+            postProgress(listener, "  Found: $path2")
+            return path2
         }
 
-        // Method 3: Find with wildcard
-        val findResult = RootHelper.executeCommand(
-            "find /data -maxdepth 4 -type d -name '$packageName' 2>/dev/null | head -1"
-        )
-        if (findResult.success && findResult.output.isNotBlank()) {
-            return findResult.output.trim()
+        // Method 3: Direct path check - /data/data/
+        postProgress(listener, "  Method 3: checking /data/data/...")
+        val path3 = "/data/data/$packageName"
+        val check3 = RootHelper.executeCommand("ls -d $path3 2>/dev/null")
+        if (check3.output.trim() == path3) {
+            postProgress(listener, "  Found: $path3")
+            return path3
         }
 
+        // Method 4: Use pm to get install location, derive data path
+        postProgress(listener, "  Method 4: deriving from pm path...")
+        val pmResult = RootHelper.executeCommand("pm path $packageName")
+        if (pmResult.success && pmResult.output.contains("package:")) {
+            // If app is installed, data dir SHOULD be /data/user/0/pkg
+            // Maybe the app was never opened - let's create data dir
+            postProgress(listener, "  App installed but no data dir. Trying to create...")
+            RootHelper.executeCommand("mkdir -p $path2")
+            val recheck = RootHelper.executeCommand("ls -d $path2 2>/dev/null")
+            if (recheck.output.trim() == path2) {
+                // Set correct ownership
+                val uidResult = RootHelper.executeCommand(
+                    "dumpsys package $packageName"
+                )
+                val uidMatch = Regex("userId=(\\d+)").find(uidResult.output)
+                if (uidMatch != null) {
+                    val uid = uidMatch.groupValues[1].toInt()
+                    val userName = "u0_a${uid - 10000}"
+                    RootHelper.executeCommand("chown -R $userName:$userName $path2")
+                    RootHelper.executeCommand("chmod 771 $path2")
+                }
+                postProgress(listener, "  Created and configured: $path2")
+                return path2
+            }
+        }
+
+        // Method 5: List all under /data/user/0/ and grep
+        postProgress(listener, "  Method 5: listing /data/user/0/...")
+        val listResult = RootHelper.executeCommand("ls /data/user/0/ | grep '$packageName'")
+        if (listResult.success && listResult.output.trim() == packageName) {
+            postProgress(listener, "  Found via listing: /data/user/0/$packageName")
+            return "/data/user/0/$packageName"
+        }
+
+        postProgress(listener, "  All methods failed!")
         return null
     }
 
@@ -69,114 +112,107 @@ class DataMover {
                 }
                 postProgress(listener, "Root access confirmed.")
 
-                // Verify packages exist
+                // Verify packages are installed
                 postProgress(listener, "Verifying packages...")
-                val srcPmCheck = RootHelper.executeCommand("pm path ${source.packageName}")
-                postProgress(listener, "Source pm path: ${srcPmCheck.output.take(200)}")
-                if (!srcPmCheck.success || srcPmCheck.output.isBlank()) {
+                val srcPm = RootHelper.executeCommand("pm path ${source.packageName}")
+                if (!srcPm.success || srcPm.output.isBlank()) {
                     postError(listener, "Source package not installed: ${source.packageName}")
                     return@Thread
                 }
+                postProgress(listener, "Source installed: OK")
 
-                val dstPmCheck = RootHelper.executeCommand("pm path ${target.packageName}")
-                postProgress(listener, "Target pm path: ${dstPmCheck.output.take(200)}")
-                if (!dstPmCheck.success || dstPmCheck.output.isBlank()) {
+                val dstPm = RootHelper.executeCommand("pm path ${target.packageName}")
+                if (!dstPm.success || dstPm.output.isBlank()) {
                     postError(listener, "Target package not installed: ${target.packageName}")
                     return@Thread
                 }
+                postProgress(listener, "Target installed: OK")
 
-                // Find actual data directories
+                // Find source data directory
                 postProgress(listener, "Finding source data directory...")
-                val srcDir = findDataDir(source.packageName)
-                postProgress(listener, "Source data dir: $srcDir")
+                val srcDir = findDataDir(source.packageName, listener)
                 if (srcDir == null) {
-                    postError(listener, "Could not find source data directory!\nPackage: ${source.packageName}")
+                    postError(listener, "Could not find source data directory!\nPackage: ${source.packageName}\n\nMake sure you have opened ${source.name} at least once.")
                     return@Thread
                 }
+                postProgress(listener, "Source dir: $srcDir")
 
+                // Check source has actual data
+                val srcContent = RootHelper.executeCommand("ls $srcDir/")
+                if (srcContent.output.isBlank()) {
+                    postError(listener, "Source data directory is empty!\n$srcDir\n\nOpen ${source.name} first to generate data.")
+                    return@Thread
+                }
+                postProgress(listener, "Source has data: ${srcContent.output.lines().size} items")
+
+                // Find target data directory
                 postProgress(listener, "Finding target data directory...")
-                val dstDir = findDataDir(target.packageName)
-                postProgress(listener, "Target data dir: $dstDir")
+                val dstDir = findDataDir(target.packageName, listener)
                 if (dstDir == null) {
-                    postError(listener, "Could not find target data directory!\nPackage: ${target.packageName}")
+                    postError(listener, "Could not find target data directory!\nPackage: ${target.packageName}\n\nPlease open ${target.name} once, then try again.")
                     return@Thread
                 }
+                postProgress(listener, "Target dir: $dstDir")
 
-                // List source contents for debug
-                postProgress(listener, "Source contents:")
-                val lsSrc = RootHelper.executeCommand("ls -la '$srcDir/' | head -20")
-                postProgress(listener, lsSrc.output.take(500))
-
-                // Force stop both
+                // Force stop both browsers
                 postProgress(listener, "Stopping browsers...")
                 RootHelper.executeCommand("am force-stop ${source.packageName}")
                 RootHelper.executeCommand("am force-stop ${target.packageName}")
                 Thread.sleep(1500)
                 postProgress(listener, "Browsers stopped.")
 
-                // Backup
+                // Backup target
                 if (backupFirst) {
                     postProgress(listener, "Creating backup of target...")
                     RootHelper.executeCommand("mkdir -p $BACKUP_DIR")
                     val ts = System.currentTimeMillis()
-                    val backupFile = "$BACKUP_DIR/${target.packageName}_$ts.tar.gz"
-                    val bkResult = RootHelper.executeCommand(
-                        "tar -czf '$backupFile' -C '$dstDir' . 2>&1"
-                    )
-                    if (bkResult.success) {
-                        postProgress(listener, "Backup saved: $backupFile")
+                    val bkFile = "$BACKUP_DIR/${target.packageName}_$ts.tar.gz"
+                    val bk = RootHelper.executeCommand("tar -czf $bkFile -C $dstDir . 2>&1")
+                    if (bk.success) {
+                        postProgress(listener, "Backup saved: $bkFile")
                     } else {
-                        postProgress(listener, "Warning: Backup failed - ${bkResult.error.take(200)}")
+                        postProgress(listener, "Backup warning: ${bk.error.take(200)}")
                     }
                 }
 
                 // Clear target
                 postProgress(listener, "Clearing target data...")
-                RootHelper.executeCommand("rm -rf '$dstDir'/*")
+                RootHelper.executeCommand("rm -rf $dstDir/*")
                 postProgress(listener, "Target cleared.")
 
                 // Copy data
                 postProgress(listener, "Copying data... (this may take a while)")
-                val cpResult = RootHelper.executeCommand("cp -a '$srcDir'/* '$dstDir'/ 2>&1")
-                postProgress(listener, "Copy done. Success: ${cpResult.success}")
+                val cpResult = RootHelper.executeCommand("cp -a $srcDir/* $dstDir/")
+                postProgress(listener, "Copy complete. Success: ${cpResult.success}")
                 if (cpResult.error.isNotBlank()) {
                     postProgress(listener, "Copy notes: ${cpResult.error.take(300)}")
                 }
 
-                // Fix ownership
+                // Fix ownership using dumpsys
                 postProgress(listener, "Fixing ownership...")
-                val uidResult = RootHelper.executeCommand(
-                    "dumpsys package ${target.packageName} | grep 'userId=' | head -1"
-                )
-                postProgress(listener, "UID lookup: ${uidResult.output.take(200)}")
+                val dumpTarget = RootHelper.executeCommand("dumpsys package ${target.packageName}")
+                val uidMatch = Regex("userId=(\\d+)").find(dumpTarget.output)
 
-                val uidMatch = Regex("userId=(\\d+)").find(uidResult.output)
                 if (uidMatch != null) {
                     val uid = uidMatch.groupValues[1].toInt()
-                    val userName = "u0_a${uid - 10000}"
-                    RootHelper.executeCommand("chown -R $userName:$userName '$dstDir'")
-                    postProgress(listener, "Ownership set to: $userName (uid=$uid)")
+                    val user = "u0_a${uid - 10000}"
+                    RootHelper.executeCommand("chown -R $user:$user $dstDir")
+                    postProgress(listener, "Ownership fixed: $user (uid=$uid)")
                 } else {
-                    // Fallback: get owner from target dir parent info
-                    postProgress(listener, "Trying alternative ownership method...")
-                    val statR = RootHelper.executeCommand("stat -c '%u:%g' '$dstDir' 2>/dev/null")
-                    val ow = statR.output.trim().replace("'", "")
-                    if (ow.isNotBlank() && !ow.startsWith("0")) {
-                        RootHelper.executeCommand("chown -R $ow '$dstDir'")
-                        postProgress(listener, "Ownership set via stat: $ow")
-                    } else {
-                        postProgress(listener, "Warning: Could not fix ownership automatically")
-                    }
+                    postProgress(listener, "Warning: Could not determine UID, trying alternative...")
+                    // Get owner of the directory before we changed it
+                    val lsResult = RootHelper.executeCommand("ls -ld /data/user/0/ | head -1")
+                    postProgress(listener, "Fallback: ${lsResult.output}")
                 }
 
-                // Fix SELinux
+                // Fix SELinux context
                 postProgress(listener, "Fixing SELinux context...")
-                RootHelper.executeCommand("restorecon -RF '$dstDir' 2>/dev/null")
+                RootHelper.executeCommand("restorecon -RF $dstDir 2>/dev/null")
 
                 // Verify
-                postProgress(listener, "Verifying transfer...")
-                val verifyResult = RootHelper.executeCommand("ls '$dstDir/' | head -15")
-                postProgress(listener, "Target contents after transfer:\n${verifyResult.output}")
+                postProgress(listener, "Verifying...")
+                val verify = RootHelper.executeCommand("ls $dstDir/ | head -15")
+                postProgress(listener, "Target after transfer:\n${verify.output}")
 
                 postSuccess(
                     listener,
