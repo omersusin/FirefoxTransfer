@@ -1,22 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Browser Data Mover</string>
-    <string name="app_description">Transfer data between Firefox and Chromium based browsers using root</string>
+    <string name="app_description">Transfer your profile between browser forks</string>
     <string name="checking_root">Checking root access…</string>
-    <string name="select_category">Select Browser Family</string>
-    <string name="firefox_family">🦊 Firefox Family</string>
-    <string name="chromium_family">🌐 Chromium Family</string>
-    <string name="source_browser">📤 Select Source Browser</string>
-    <string name="source_description">Select the browser you want to copy data FROM</string>
-    <string name="target_browser">📥 Select Target Browser</string>
-    <string name="target_description">Select the browser you want to copy data TO</string>
-    <string name="manual_entry">✏️ Manual Package Entry</string>
-    <string name="hint_source_package">Source package (e.g. org.mozilla.firefox)</string>
-    <string name="hint_target_package">Target package (e.g. org.mozilla.fennec_fdroid)</string>
-    <string name="manual_transfer">Start Manual Transfer</string>
-    <string name="backup_before_transfer">Backup before transfer</string>
-    <string name="backup_description">Target browser data will be backed up to /sdcard/BrowserDataMover/backups</string>
+    
+    <string name="select_transfer_type">Select Transfer Type</string>
+    <string name="firefox_family">Firefox Family</string>
+    <string name="firefox_desc">Firefox, Iceraven, Mull, Fennec...</string>
+    <string name="chromium_family">Chromium Family</string>
+    <string name="chromium_desc">Chrome, Brave, Edge, Vivaldi...</string>
+    
+    <string name="source_browser">From Browser (Source)</string>
+    <string name="source_description">Choose the browser to copy data FROM</string>
+    <string name="target_browser">To Browser (Target)</string>
+    <string name="target_description">Choose the browser to copy data TO</string>
+    
+    <string name="manual_entry">Manual Package Entry</string>
+    <string name="hint_source_package">Source package</string>
+    <string name="hint_target_package">Target package</string>
+    <string name="manual_transfer">Run Manual Transfer</string>
+    
+    <string name="backup_before_transfer">Backup target before transfer</string>
+    <string name="backup_description">Saves current target data to /sdcard/BrowserDataMover/</string>
+    
     <string name="start_transfer">🚀 Start Transfer</string>
-    <string name="log_title">📋 Operation Log</string>
-    <string name="btn_back">← Back</string>
+    <string name="log_title">Operation Log</string>
+    <string name="btn_back">Change Type</string>
+    <string name="step_source">Step 1: Select Source</string>
+    <string name="step_target">Step 2: Select Target</string>
 </resources>
