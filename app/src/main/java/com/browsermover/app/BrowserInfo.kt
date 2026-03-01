@@ -8,7 +8,7 @@ data class BrowserInfo(
 )
 
 enum class BrowserType(val label: String) {
-    FIREFOX("Firefox Tabanlı"),
-    CHROMIUM("Chromium Tabanlı"),
-    UNKNOWN("Bilinmiyor")
+    FIREFOX("Firefox Based"),
+    CHROMIUM("Chromium Based"),
+    UNKNOWN("Unknown")
 }

@@ -1,18 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Browser Data Mover</string>
-    <string name="app_description">Firefox ve Chromium tabanlı tarayıcılar arasında root ile veri aktarımı yapın</string>
-    <string name="checking_root">Root erişimi kontrol ediliyor…</string>
-    <string name="source_browser">📤 Kaynak Tarayıcı</string>
-    <string name="source_description">Verilerini aktarmak istediğiniz tarayıcıyı seçin</string>
-    <string name="target_browser">📥 Hedef Tarayıcı</string>
-    <string name="target_description">Verilerin aktarılacağı tarayıcıyı seçin</string>
-    <string name="manual_entry">✏️ Manuel Paket Adı Girişi</string>
-    <string name="hint_source_package">Kaynak paket adı (ör: org.mozilla.firefox)</string>
-    <string name="hint_target_package">Hedef paket adı (ör: org.mozilla.fennec_fdroid)</string>
-    <string name="manual_transfer">Manuel Transfer Başlat</string>
-    <string name="backup_before_transfer">Transfer öncesi yedekle</string>
-    <string name="backup_description">Hedef tarayıcının verileri /sdcard/BrowserDataMover/backups klasörüne yedeklenir</string>
-    <string name="start_transfer">🚀 Transferi Başlat</string>
-    <string name="log_title">📋 İşlem Günlüğü</string>
+    <string name="app_description">Transfer data between Firefox and Chromium based browsers using root</string>
+    <string name="checking_root">Checking root access…</string>
+    <string name="select_category">Select Browser Family</string>
+    <string name="firefox_family">🦊 Firefox Family</string>
+    <string name="chromium_family">🌐 Chromium Family</string>
+    <string name="source_browser">📤 Select Source Browser</string>
+    <string name="source_description">Select the browser you want to copy data FROM</string>
+    <string name="target_browser">📥 Select Target Browser</string>
+    <string name="target_description">Select the browser you want to copy data TO</string>
+    <string name="manual_entry">✏️ Manual Package Entry</string>
+    <string name="hint_source_package">Source package (e.g. org.mozilla.firefox)</string>
+    <string name="hint_target_package">Target package (e.g. org.mozilla.fennec_fdroid)</string>
+    <string name="manual_transfer">Start Manual Transfer</string>
+    <string name="backup_before_transfer">Backup before transfer</string>
+    <string name="backup_description">Target browser data will be backed up to /sdcard/BrowserDataMover/backups</string>
+    <string name="start_transfer">🚀 Start Transfer</string>
+    <string name="log_title">📋 Operation Log</string>
+    <string name="btn_back">← Back</string>
 </resources>

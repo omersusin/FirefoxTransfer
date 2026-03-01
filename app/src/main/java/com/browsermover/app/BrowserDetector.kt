@@ -6,7 +6,6 @@ import android.content.pm.PackageManager
 class BrowserDetector(private val context: Context) {
 
     private val knownBrowsers = listOf(
-        // Firefox ailesi
         BrowserInfo("Firefox", "org.mozilla.firefox", BrowserType.FIREFOX),
         BrowserInfo("Firefox Beta", "org.mozilla.firefox_beta", BrowserType.FIREFOX),
         BrowserInfo("Firefox Nightly", "org.mozilla.fenix", BrowserType.FIREFOX),
@@ -29,7 +28,6 @@ class BrowserDetector(private val context: Context) {
         BrowserInfo("IceCatMobile", "org.gnu.icecat", BrowserType.FIREFOX),
         BrowserInfo("Waterfox", "net.waterfox.android.release", BrowserType.FIREFOX),
 
-        // Chromium ailesi
         BrowserInfo("Chrome", "com.android.chrome", BrowserType.CHROMIUM),
         BrowserInfo("Chrome Beta", "com.chrome.beta", BrowserType.CHROMIUM),
         BrowserInfo("Chrome Dev", "com.chrome.dev", BrowserType.CHROMIUM),
@@ -49,30 +47,33 @@ class BrowserDetector(private val context: Context) {
         BrowserInfo("Vivaldi", "com.vivaldi.browser", BrowserType.CHROMIUM),
         BrowserInfo("Vivaldi Snapshot", "com.vivaldi.browser.snapshot", BrowserType.CHROMIUM),
         BrowserInfo("Kiwi Browser", "com.kiwibrowser.browser", BrowserType.CHROMIUM),
-        BrowserInfo("Bromite", "org.nicoco.nicoco", BrowserType.CHROMIUM),
-        BrowserInfo("Cromite", "org.nicoco.nicoco", BrowserType.CHROMIUM),
         BrowserInfo("Vanadium", "app.vanadium.browser", BrowserType.CHROMIUM),
         BrowserInfo("DuckDuckGo", "com.duckduckgo.mobile.android", BrowserType.CHROMIUM),
         BrowserInfo("Adblock Browser", "org.adblockplus.browser", BrowserType.CHROMIUM),
         BrowserInfo("Adblock Browser Beta", "org.adblockplus.browser.beta", BrowserType.CHROMIUM),
     )
 
-    fun detectInstalledBrowsers(): List<BrowserInfo> {
+    fun detectInstalledBrowsers(filterType: BrowserType? = null): List<BrowserInfo> {
         val installed = mutableListOf<BrowserInfo>()
 
-        // 1. Bilinen listeyi kontrol et
-        for (browser in knownBrowsers) {
+        val browsersToCheck = if (filterType != null) {
+            knownBrowsers.filter { it.type == filterType }
+        } else {
+            knownBrowsers
+        }
+
+        for (browser in browsersToCheck) {
             if (isPackageInstalled(browser.packageName)) {
                 installed.add(browser.copy(isInstalled = true))
             }
         }
 
-        // 2. Root ile bilinmeyen tarayıcıları otomatik tespit et
-        val detectedUnknown = autoDetectWithRoot()
-        for (browser in detectedUnknown) {
-            val alreadyInList = installed.any { it.packageName == browser.packageName }
-            if (!alreadyInList) {
-                installed.add(browser)
+        if (RootHelper.isRootAvailable()) {
+            val unknown = autoDetectUnknown(filterType)
+            for (browser in unknown) {
+                if (installed.none { it.packageName == browser.packageName }) {
+                    installed.add(browser)
+                }
             }
         }
 
@@ -94,65 +95,49 @@ class BrowserDetector(private val context: Context) {
         }
     }
 
-    private fun autoDetectWithRoot(): List<BrowserInfo> {
+    private fun autoDetectUnknown(filterType: BrowserType?): List<BrowserInfo> {
         val detected = mutableListOf<BrowserInfo>()
-
-        if (!RootHelper.isRootAvailable()) return detected
-
-        // /data/data altindaki tum paketleri tara
         val result = RootHelper.executeCommand("ls /data/data/")
         if (!result.success) return detected
 
+        val knownPkgs = knownBrowsers.map { it.packageName }.toSet()
         val packages = result.output.lines().filter { it.isNotBlank() }
-        val knownPackages = knownBrowsers.map { it.packageName }.toSet()
 
         for (pkg in packages) {
-            if (pkg in knownPackages) continue
+            if (pkg in knownPkgs) continue
             if (!isPackageInstalled(pkg)) continue
 
-            val type = detectBrowserType(pkg)
-            if (type != BrowserType.UNKNOWN) {
-                val appName = getAppName(pkg) ?: pkg
-                detected.add(
-                    BrowserInfo(
-                        name = "$appName (Otomatik Tespit)",
-                        packageName = pkg,
-                        type = type,
-                        isInstalled = true
-                    )
-                )
-            }
+            val type = detectType(pkg)
+            if (type == BrowserType.UNKNOWN) continue
+            if (filterType != null && type != filterType) continue
+
+            val name = getAppName(pkg) ?: pkg
+            detected.add(BrowserInfo("$name (Auto)", pkg, type, true))
         }
 
         return detected
     }
 
-    private fun detectBrowserType(packageName: String): BrowserType {
-        val dataDir = "/data/data/$packageName"
+    private fun detectType(pkg: String): BrowserType {
+        val dir = "/data/data/$pkg"
 
-        // Firefox isaretleri: files/mozilla klasoru veya libxul.so
-        val firefoxCheck = RootHelper.executeCommand(
-            "ls $dataDir/files/mozilla 2>/dev/null || ls $dataDir/lib/libxul.so 2>/dev/null"
+        val ffCheck = RootHelper.executeCommand(
+            "test -d $dir/files/mozilla && echo FF || test -f $dir/lib/libxul.so && echo FF || echo NO"
         )
-        if (firefoxCheck.success && firefoxCheck.output.isNotBlank()) {
-            return BrowserType.FIREFOX
-        }
+        if (ffCheck.output.contains("FF")) return BrowserType.FIREFOX
 
-        // Chromium isaretleri: app_chrome klasoru veya libchrome.so
-        val chromiumCheck = RootHelper.executeCommand(
-            "ls $dataDir/app_chrome 2>/dev/null || ls $dataDir/lib/libchrome.so 2>/dev/null"
+        val crCheck = RootHelper.executeCommand(
+            "test -d $dir/app_chrome && echo CR || test -f $dir/lib/libchrome.so && echo CR || echo NO"
         )
-        if (chromiumCheck.success && chromiumCheck.output.isNotBlank()) {
-            return BrowserType.CHROMIUM
-        }
+        if (crCheck.output.contains("CR")) return BrowserType.CHROMIUM
 
         return BrowserType.UNKNOWN
     }
 
     private fun getAppName(packageName: String): String? {
         return try {
-            val appInfo = context.packageManager.getApplicationInfo(packageName, 0)
-            context.packageManager.getApplicationLabel(appInfo).toString()
+            val ai = context.packageManager.getApplicationInfo(packageName, 0)
+            context.packageManager.getApplicationLabel(ai).toString()
         } catch (e: Exception) {
             null
         }

@@ -11,7 +11,7 @@
         android:orientation="vertical"
         android:padding="16dp">
 
-        <!-- Baslik -->
+        <!-- Header -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -47,9 +47,8 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Root Durumu -->
+        <!-- Root Status -->
         <com.google.android.material.card.MaterialCardView
-            android:id="@+id/cardRootStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
@@ -81,11 +80,13 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Kaynak Secimi -->
+        <!-- Category Selection -->
         <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardCategory"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
+            android:visibility="gone"
             app:cardCornerRadius="12dp"
             app:cardElevation="2dp">
 
@@ -98,10 +99,77 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/source_browser"
+                    android:text="@string/select_category"
                     android:textSize="16sp"
                     android:textStyle="bold"
-                    android:textColor="@color/text_primary" />
+                    android:textColor="@color/text_primary"
+                    android:layout_marginBottom="12dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnFirefox"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:text="@string/firefox_family"
+                    android:textSize="15sp"
+                    app:cornerRadius="10dp"
+                    app:backgroundTint="@color/badge_firefox"
+                    android:layout_marginBottom="8dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnChromium"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:text="@string/chromium_family"
+                    android:textSize="15sp"
+                    app:cornerRadius="10dp"
+                    app:backgroundTint="@color/badge_chromium" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Source Selection -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardSource"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:visibility="gone"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="2dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="10dp">
+
+                    <TextView
+                        android:id="@+id/tvSourceTitle"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/source_browser"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/text_primary" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnBack"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="@string/btn_back"
+                        android:textSize="12sp"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        app:cornerRadius="8dp" />
+
+                </LinearLayout>
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -109,7 +177,6 @@
                     android:text="@string/source_description"
                     android:textSize="12sp"
                     android:textColor="@color/text_secondary"
-                    android:layout_marginTop="2dp"
                     android:layout_marginBottom="10dp" />
 
                 <androidx.recyclerview.widget.RecyclerView
@@ -121,7 +188,7 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Hedef Secimi -->
+        <!-- Target Selection -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/cardTarget"
             android:layout_width="match_parent"
@@ -164,11 +231,13 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Manuel Paket Adi Girisi -->
+        <!-- Manual Entry -->
         <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardManual"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
+            android:visibility="gone"
             app:cardCornerRadius="12dp"
             app:cardElevation="2dp">
 
@@ -235,11 +304,13 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Yedekleme Secenegi -->
+        <!-- Backup Switch -->
         <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardBackup"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
+            android:visibility="gone"
             app:cardCornerRadius="12dp"
             app:cardElevation="2dp">
 
@@ -283,7 +354,7 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Transfer Butonu -->
+        <!-- Transfer Button -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnTransfer"
             android:layout_width="match_parent"
@@ -295,7 +366,7 @@
             app:cornerRadius="12dp"
             android:layout_marginBottom="12dp" />
 
-        <!-- Log / Durum -->
+        <!-- Log -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/cardLog"
             android:layout_width="match_parent"
