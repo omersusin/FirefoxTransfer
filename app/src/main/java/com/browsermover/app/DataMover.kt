@@ -217,36 +217,37 @@ class DataMover {
             appendLine("")
 
             // ==========================================
-            // Now copy profiles, shared_prefs and databases for FULL CLONE
+            // SAFER CLONE: Copy Profile Only + Account Token
             // ==========================================
-            appendLine("echo STEP=Cloning_data")
+            appendLine("echo STEP=Cloning_profile")
             
-            // 1. Profiles
+            // Wipe target mozilla dir to ensure clean slate
+            appendLine("rm -rf \"\$DSTDIR/files/mozilla\"")
             appendLine("mkdir -p \"\$DSTDIR/files/mozilla\"")
+            
+            // Copy profiles.ini (Crucial: maps profile names to dirs)
             appendLine("cp -a \"\$SRCDIR/files/mozilla/profiles.ini\" \"\$DSTDIR/files/mozilla/\" 2>/dev/null")
+            // Copy signedInUser.json (Account Info - best effort)
             appendLine("cp -a \"\$SRCDIR/files/mozilla/signedInUser.json\" \"\$DSTDIR/files/mozilla/\" 2>/dev/null")
             
             appendLine("find \"\$SRCDIR/files/mozilla\" -mindepth 1 -maxdepth 1 -type d -not -name 'Crash Reports' -not -name 'updates' -not -name 'extensions' | while read SRC_P_PATH; do")
             appendLine("  P_NAME=\$(basename \"\$SRC_P_PATH\")")
             appendLine("  DST_P_PATH=\"\$DSTDIR/files/mozilla/\$P_NAME\"")
             appendLine("  echo \"CLONING_PROFILE=\$P_NAME\"")
+            
+            // Copy entire profile folder
             appendLine("  cp -a \"\$SRC_P_PATH\" \"\$DSTDIR/files/mozilla/\"")
+            
+            // Cleanup locks
+            appendLine("  rm -f \"\$DST_P_PATH/lock\"")
+            appendLine("  rm -f \"\$DST_P_PATH/.parentlock\"")
             
             // Patch prefs.js
             appendLine("  if [ -f \"\$DST_P_PATH/prefs.js\" ]; then")
             appendLine("    sed -i \"s|\$SRCDIR|\$DSTDIR|g\" \"\$DST_P_PATH/prefs.js\"")
+            appendLine("    echo \"PREFS_FIXED=DONE\"")
             appendLine("  fi")
             appendLine("done")
-
-            // 2. Shared Prefs (Contains account and many settings)
-            appendLine("echo STEP=Cloning_settings")
-            appendLine("cp -a \"\$SRCDIR/shared_prefs\" \"\$DSTDIR/\" 2>/dev/null")
-            // Patch paths in XML files
-            appendLine("find \"\$DSTDIR/shared_prefs\" -name '*.xml' -exec sed -i \"s|\$SRCDIR|\$DSTDIR|g\" {} + 2>/dev/null")
-
-            // 3. Databases (Contains account sync state, tabs, etc)
-            appendLine("echo STEP=Cloning_databases")
-            appendLine("cp -a \"\$SRCDIR/databases\" \"\$DSTDIR/\" 2>/dev/null")
             
             appendLine("")
             appendLine("echo CLONE=DONE")

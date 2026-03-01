@@ -115,9 +115,8 @@ class BrowserDetector(private val context: Context) {
     }
 
     fun getCompatibleTargets(source: BrowserInfo, allBrowsers: List<BrowserInfo>): List<BrowserInfo> {
-        return allBrowsers.filter {
-            it.packageName != source.packageName && (it.type == source.type || it.type == BrowserType.UNKNOWN || source.type == BrowserType.UNKNOWN)
-        }
+        // Show ALL other browsers as potential targets, regardless of type
+        return allBrowsers.filter { it.packageName != source.packageName }
     }
 
     private fun isPackageInstalled(packageName: String): Boolean {
