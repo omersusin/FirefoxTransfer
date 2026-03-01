@@ -38,12 +38,10 @@ class DataMover {
                 val suMethodName = RootHelper.getSuMethodName()
                 postProgress(listener, "Root method: $suMethodName")
 
-                // Build script
                 val script = buildScript(srcPkg, dstPkg, backupFirst)
 
                 postProgress(listener, "Executing transfer script...")
 
-                // Execute in single su session
                 val suMethod = RootHelper.getSuMethod()
                 val process = Runtime.getRuntime().exec(suMethod)
                 val os = DataOutputStream(process.outputStream)
@@ -63,7 +61,6 @@ class DataMover {
                 stderr.close()
                 process.waitFor(180, TimeUnit.SECONDS)
 
-                // Parse and report
                 parseOutput(output, error, source, target, listener)
 
             } catch (e: Exception) {
@@ -91,12 +88,11 @@ class DataMover {
             appendLine("  echo \"ERROR=Source not found\"")
             appendLine("  echo \"DEBUG_DATA_DATA=\$(ls /data/data/ 2>&1 | grep -i moz | head -10)\"")
             appendLine("  echo \"DEBUG_USER_0=\$(ls /data/user/0/ 2>&1 | grep -i moz | head -10)\"")
-            appendLine("  echo \"DEBUG_PM=\$(pm path $srcPkg 2>&1)\"")
             appendLine("  exit 1")
             appendLine("fi")
             appendLine("")
 
-            // Source content check
+            // Source content
             appendLine("echo \"SRC_FILES=\$(ls \$SRCDIR/ 2>/dev/null | head -10)\"")
             appendLine("")
 
@@ -114,14 +110,14 @@ class DataMover {
             appendLine("fi")
             appendLine("")
 
-            // Get owner BEFORE any changes
+            // Get owner BEFORE changes
             appendLine("echo STEP=Getting_owner")
             appendLine("UGROUP=\$(ls -ld \"\$DSTDIR\" | awk '{print \$3}')")
             appendLine("UGROUPG=\$(ls -ld \"\$DSTDIR\" | awk '{print \$4}')")
             appendLine("echo \"OWNER=\$UGROUP:\$UGROUPG\"")
             appendLine("")
 
-            // Fallback: get owner from dumpsys
+            // Fallback owner via dumpsys
             appendLine("if [ -z \"\$UGROUP\" ] || [ \"\$UGROUP\" = \"root\" ]; then")
             appendLine("  DUMP_UID=\$(dumpsys package $dstPkg | grep 'userId=' | head -1 | sed 's/.*userId=//' | sed 's/[^0-9].*//')")
             appendLine("  if [ -n \"\$DUMP_UID\" ]; then")
@@ -160,6 +156,48 @@ class DataMover {
             appendLine("echo COPY=DONE")
             appendLine("")
 
+            // Clean up incompatible session/state files
+            appendLine("echo STEP=Cleaning_session_data")
+            appendLine("")
+
+            // Android Components session storage
+            appendLine("rm -rf \"\$DSTDIR/files/.browser_state\" 2>/dev/null")
+            appendLine("rm -rf \"\$DSTDIR/files/session\" 2>/dev/null")
+            appendLine("rm -f \"\$DSTDIR/files/session.json\" 2>/dev/null")
+            appendLine("rm -f \"\$DSTDIR/files/session.json.bak\" 2>/dev/null")
+            appendLine("")
+
+            // GeckoView session files
+            appendLine("rm -f \"\$DSTDIR/files/mozilla/*/sessionstore.jsonlz4\" 2>/dev/null")
+            appendLine("rm -f \"\$DSTDIR/files/mozilla/*/sessionstore-backups\"/*.jsonlz4 2>/dev/null")
+            appendLine("rm -rf \"\$DSTDIR/files/mozilla/*/sessionstore-backups\" 2>/dev/null")
+            appendLine("")
+
+            // Snapshots and tab state
+            appendLine("rm -rf \"\$DSTDIR/files/snapshots\" 2>/dev/null")
+            appendLine("rm -rf \"\$DSTDIR/files/tab_state\" 2>/dev/null")
+            appendLine("rm -rf \"\$DSTDIR/files/recently_closed_tabs\" 2>/dev/null")
+            appendLine("")
+
+            // Crash reports
+            appendLine("rm -rf \"\$DSTDIR/files/mozilla/Crash Reports\" 2>/dev/null")
+            appendLine("rm -rf \"\$DSTDIR/cache\" 2>/dev/null")
+            appendLine("rm -rf \"\$DSTDIR/code_cache\" 2>/dev/null")
+            appendLine("")
+
+            // Shared prefs that may reference wrong package
+            appendLine("rm -rf \"\$DSTDIR/shared_prefs\" 2>/dev/null")
+            appendLine("")
+
+            // App-specific databases that may be incompatible
+            appendLine("rm -f \"\$DSTDIR/databases/fenix*\" 2>/dev/null")
+            appendLine("rm -f \"\$DSTDIR/databases/focus*\" 2>/dev/null")
+            appendLine("rm -f \"\$DSTDIR/databases/klar*\" 2>/dev/null")
+            appendLine("")
+
+            appendLine("echo SESSION_CLEAN=DONE")
+            appendLine("")
+
             // Fix ownership
             appendLine("echo STEP=Fixing_ownership")
             appendLine("if [ -n \"\$UGROUP\" ] && [ \"\$UGROUP\" != \"root\" ]; then")
@@ -180,6 +218,12 @@ class DataMover {
             appendLine("echo \"DST_FILES=\$(ls \"\$DSTDIR\"/ 2>/dev/null | head -10)\"")
             appendLine("DST_COUNT=\$(ls \"\$DSTDIR\"/ 2>/dev/null | wc -l)")
             appendLine("echo \"DST_COUNT=\$DST_COUNT\"")
+            appendLine("")
+
+            // Show what was kept
+            appendLine("echo STEP=Kept_data")
+            appendLine("echo \"KEPT_MOZILLA=\$(ls \"\$DSTDIR/files/mozilla/\" 2>/dev/null | head -5)\"")
+            appendLine("echo \"KEPT_DBS=\$(ls \"\$DSTDIR/databases/\" 2>/dev/null | head -10)\"")
             appendLine("")
 
             appendLine("echo TRANSFER_COMPLETE")
@@ -223,11 +267,14 @@ class DataMover {
                     postProgress(listener, "Owner (via UID): ${trimmed.removePrefix("OWNER_DUMP=")}")
                 }
                 trimmed.startsWith("BACKUP=") -> {
-                    val status = trimmed.removePrefix("BACKUP=")
-                    postProgress(listener, if (status == "OK") "✅ Backup saved" else "⚠️ Backup failed")
+                    val s = trimmed.removePrefix("BACKUP=")
+                    postProgress(listener, if (s == "OK") "✅ Backup saved" else "⚠️ Backup failed")
                 }
                 trimmed == "COPY=DONE" -> {
                     postProgress(listener, "✅ Copy complete")
+                }
+                trimmed == "SESSION_CLEAN=DONE" -> {
+                    postProgress(listener, "✅ Session data cleaned (prevents crashes)")
                 }
                 trimmed.startsWith("CHOWN=") -> {
                     val v = trimmed.removePrefix("CHOWN=")
@@ -239,10 +286,15 @@ class DataMover {
                 trimmed.startsWith("DST_COUNT=") -> {
                     postProgress(listener, "Target file count: ${trimmed.removePrefix("DST_COUNT=")}")
                 }
+                trimmed.startsWith("KEPT_MOZILLA=") -> {
+                    postProgress(listener, "Kept (mozilla): ${trimmed.removePrefix("KEPT_MOZILLA=").take(100)}")
+                }
+                trimmed.startsWith("KEPT_DBS=") -> {
+                    postProgress(listener, "Kept (databases): ${trimmed.removePrefix("KEPT_DBS=").take(100)}")
+                }
                 trimmed.startsWith("ERROR=") -> {
                     hasError = true
-                    val errMsg = trimmed.removePrefix("ERROR=")
-                    postError(listener, "$errMsg\n\nPackage: ${source.packageName}")
+                    postError(listener, "${trimmed.removePrefix("ERROR=")}\n\nPackage: ${source.packageName}")
                 }
                 trimmed.startsWith("DEBUG_") -> {
                     postProgress(listener, "Debug: $trimmed")
@@ -253,6 +305,8 @@ class DataMover {
                             "Transfer successful!\n\n" +
                             "From: ${source.name}\n($srcDir)\n\n" +
                             "To: ${target.name}\n($dstDir)\n\n" +
+                            "Transferred: Bookmarks, logins, cookies, history, extensions\n" +
+                            "Cleaned: Session/tab data (prevents crashes)\n\n" +
                             "You can now open ${target.name}.")
                     }
                     return
@@ -262,9 +316,7 @@ class DataMover {
 
         if (!hasError) {
             postError(listener,
-                "Transfer may have failed.\n\n" +
-                "Output:\n${output.take(2000)}\n\n" +
-                "Errors:\n${error.take(500)}")
+                "Transfer may have failed.\n\nOutput:\n${output.take(2000)}\n\nErrors:\n${error.take(500)}")
         }
     }
 
