@@ -260,7 +260,7 @@ class MainActivity : AppCompatActivity() {
             override fun onProgress(message: String) {
                 appendLog("⏳ $message")
             }
-    ...
+
             override fun onSuccess(message: String) {
                 appendLog("✅ $message")
                 btnTransfer.isEnabled = true
