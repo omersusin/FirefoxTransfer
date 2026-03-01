@@ -1,42 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- MD3 Palette -->
-    <color name="primary">#0061A4</color>
-    <color name="onPrimary">#FFFFFF</color>
-    <color name="primaryContainer">#D1E4FF</color>
-    <color name="onPrimaryContainer">#001D36</color>
-    
-    <color name="secondary">#535F70</color>
-    <color name="onSecondary">#FFFFFF</color>
-    <color name="secondaryContainer">#D7E3F7</color>
-    <color name="onSecondaryContainer">#101C2B</color>
-    
-    <color name="tertiary">#6B5778</color>
-    <color name="onTertiary">#FFFFFF</color>
-    <color name="tertiaryContainer">#F2DAFF</color>
-    <color name="onTertiaryContainer">#251431</color>
-    
-    <color name="error">#BA1A1A</color>
-    <color name="onError">#FFFFFF</color>
-    
-    <color name="background">#FDFCFF</color>
-    <color name="onBackground">#1A1C1E</color>
-    <color name="surface">#FDFCFF</color>
-    <color name="onSurface">#1A1C1E</color>
-    <color name="surfaceVariant">#DFE2EB</color>
-    <color name="onSurfaceVariant">#43474E</color>
-    <color name="outline">#73777F</color>
-
-    <!-- Specific accents -->
-    <color name="firefox_orange">#FF6611</color>
-    <color name="chromium_blue">#4285F4</color>
-    
-    <!-- Legacy support (avoiding breaks) -->
+    <color name="background">#F5F5F5</color>
+    <color name="card_header">#1565C0</color>
     <color name="white">#FFFFFF</color>
     <color name="white_70">#B3FFFFFF</color>
-    <color name="card_header">#0061A4</color>
-    <color name="selected_stroke">#0061A4</color>
-    <color name="card_stroke">#CAC4D0</color>
+    <color name="text_primary">#212121</color>
+    <color name="text_secondary">#757575</color>
+    <color name="card_stroke">#E0E0E0</color>
+    <color name="selected_stroke">#1565C0</color>
+    <color name="log_background">#FAFAFA</color>
     <color name="badge_firefox">#FF6611</color>
     <color name="badge_chromium">#4285F4</color>
 </resources>

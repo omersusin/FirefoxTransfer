@@ -25,25 +25,24 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var tvRootIcon: TextView
     private lateinit var tvRootStatus: TextView
-    private lateinit var cardCategory: View // Changed to View for flexibility
-    private lateinit var btnFirefox: View
-    private lateinit var btnChromium: View
-    private lateinit var cardSource: View
+    private lateinit var cardCategory: MaterialCardView
+    private lateinit var btnFirefox: MaterialButton
+    private lateinit var btnChromium: MaterialButton
+    private lateinit var cardSource: MaterialCardView
     private lateinit var tvSourceTitle: TextView
     private lateinit var btnBack: MaterialButton
     private lateinit var rvSourceBrowsers: RecyclerView
-    private lateinit var cardTarget: View
+    private lateinit var cardTarget: MaterialCardView
     private lateinit var tvTargetDescription: TextView
     private lateinit var rvTargetBrowsers: RecyclerView
-    private lateinit var btnShowManual: MaterialButton
-    private lateinit var cardManual: View
+    private lateinit var cardManual: MaterialCardView
     private lateinit var etSourcePackage: TextInputEditText
     private lateinit var etTargetPackage: TextInputEditText
     private lateinit var btnManualTransfer: MaterialButton
-    private lateinit var cardBackup: View
+    private lateinit var cardBackup: MaterialCardView
     private lateinit var switchBackup: SwitchMaterial
     private lateinit var btnTransfer: MaterialButton
-    private lateinit var cardLog: View
+    private lateinit var cardLog: MaterialCardView
     private lateinit var tvLog: TextView
 
     private var selectedType: BrowserType? = null
@@ -75,7 +74,6 @@ class MainActivity : AppCompatActivity() {
         cardTarget = findViewById(R.id.cardTarget)
         tvTargetDescription = findViewById(R.id.tvTargetDescription)
         rvTargetBrowsers = findViewById(R.id.rvTargetBrowsers)
-        btnShowManual = findViewById(R.id.btnShowManual)
         cardManual = findViewById(R.id.cardManual)
         etSourcePackage = findViewById(R.id.etSourcePackage)
         etTargetPackage = findViewById(R.id.etTargetPackage)
@@ -94,9 +92,6 @@ class MainActivity : AppCompatActivity() {
         btnBack.setOnClickListener { goBackToCategory() }
         btnTransfer.setOnClickListener { onTransferClicked() }
         btnManualTransfer.setOnClickListener { onManualTransferClicked() }
-        btnShowManual.setOnClickListener {
-            cardManual.visibility = if (cardManual.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-        }
     }
 
     private fun checkRoot() {
@@ -110,7 +105,6 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     tvRootIcon.text = "❌"
                     tvRootStatus.text = "Root access not found! This app requires root."
-                    cardCategory.visibility = View.GONE
                 }
             }
         }.start()
@@ -123,23 +117,20 @@ class MainActivity : AppCompatActivity() {
 
         cardCategory.visibility = View.GONE
         cardSource.visibility = View.VISIBLE
+        cardManual.visibility = View.VISIBLE
+        cardBackup.visibility = View.VISIBLE
         cardTarget.visibility = View.GONE
         btnTransfer.visibility = View.GONE
-        cardLog.visibility = View.GONE
 
         tvSourceTitle.text = if (type == BrowserType.FIREFOX)
-            "🦊 Firefox Family" else "🌐 Chromium Family"
-
-        // Clear existing adapters to avoid showing old data
-        rvSourceBrowsers.adapter = null
-        rvTargetBrowsers.adapter = null
+            "🦊 Firefox Family — Select Source" else "🌐 Chromium Family — Select Source"
 
         Thread {
             val browsers = detector.detectInstalledBrowsers(type)
             runOnUiThread {
                 installedBrowsers = browsers
                 if (browsers.isEmpty()) {
-                    Toast.makeText(this, "No installed ${type.label} browsers found. Check manual entry below.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "No installed ${type.label} browsers found.", Toast.LENGTH_LONG).show()
                 } else {
                     rvSourceBrowsers.adapter = BrowserAdapter(browsers) { browser ->
                         onSourceSelected(browser)
@@ -159,6 +150,7 @@ class MainActivity : AppCompatActivity() {
         cardSource.visibility = View.GONE
         cardTarget.visibility = View.GONE
         cardManual.visibility = View.GONE
+        cardBackup.visibility = View.GONE
         btnTransfer.visibility = View.GONE
         cardLog.visibility = View.GONE
     }
@@ -172,10 +164,10 @@ class MainActivity : AppCompatActivity() {
         val targets = detector.getCompatibleTargets(source, installedBrowsers)
 
         cardTarget.visibility = View.VISIBLE
-        tvTargetDescription.text = getString(R.string.step_target)
+        tvTargetDescription.text = "Compatible with ${source.name} (${source.type.label})"
 
         if (targets.isEmpty()) {
-            Toast.makeText(this, "No compatible target found. Use manual entry.", Toast.LENGTH_SHORT).show()
+            tvTargetDescription.text = "No compatible target found. Use manual entry."
             rvTargetBrowsers.adapter = null
             btnTransfer.visibility = View.GONE
         } else {
@@ -236,23 +228,16 @@ class MainActivity : AppCompatActivity() {
         btnTransfer.isEnabled = false
         btnManualTransfer.isEnabled = false
 
-        // Determine type: if browser info says UNKNOWN, use the category selected by user
-        val finalType = if (selectedSource?.type != null && selectedSource?.type != BrowserType.UNKNOWN) {
-            selectedSource?.type!!
-        } else {
-            selectedType ?: BrowserType.UNKNOWN
-        }
-
         val source = BrowserInfo(
             name = selectedSource?.name ?: srcPkg,
             packageName = srcPkg,
-            type = finalType,
+            type = selectedType ?: BrowserType.UNKNOWN,
             isInstalled = true
         )
         val target = BrowserInfo(
             name = selectedTarget?.name ?: dstPkg,
             packageName = dstPkg,
-            type = finalType,
+            type = selectedType ?: BrowserType.UNKNOWN,
             isInstalled = true
         )
 
