@@ -126,13 +126,20 @@ class MainActivity : AppCompatActivity() {
             "🦊 Firefox Family — Select Source" else "🌐 Chromium Family — Select Source"
 
         Thread {
-            val browsers = detector.detectInstalledBrowsers(type)
+            // Fetch ALL browsers to ensure the target list is full
+            val allBrowsers = detector.detectInstalledBrowsers(null) 
             runOnUiThread {
-                installedBrowsers = browsers
-                if (browsers.isEmpty()) {
+                installedBrowsers = allBrowsers
+                
+                // Filter only the SOURCE list by the selected category
+                val sourceBrowsers = allBrowsers.filter { 
+                    it.type == type || it.type == BrowserType.UNKNOWN 
+                }
+                
+                if (sourceBrowsers.isEmpty()) {
                     Toast.makeText(this, "No installed ${type.label} browsers found.", Toast.LENGTH_LONG).show()
                 } else {
-                    rvSourceBrowsers.adapter = BrowserAdapter(browsers) { browser ->
+                    rvSourceBrowsers.adapter = BrowserAdapter(sourceBrowsers) { browser ->
                         onSourceSelected(browser)
                     }
                 }

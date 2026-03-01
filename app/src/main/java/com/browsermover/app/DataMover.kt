@@ -217,37 +217,40 @@ class DataMover {
             appendLine("")
 
             // ==========================================
-            // SAFER CLONE: Copy Profile Only + Account Token
+            // BETTER CLONE: Profile + Critical Meta
             // ==========================================
-            appendLine("echo STEP=Cloning_profile")
+            appendLine("echo STEP=Cloning_data")
             
-            // Wipe target mozilla dir to ensure clean slate
+            // Wipe target mozilla dir
             appendLine("rm -rf \"\$DSTDIR/files/mozilla\"")
             appendLine("mkdir -p \"\$DSTDIR/files/mozilla\"")
             
-            // Copy profiles.ini (Crucial: maps profile names to dirs)
+            // 1. Copy Critical Metadata (Profiles list and account info)
             appendLine("cp -a \"\$SRCDIR/files/mozilla/profiles.ini\" \"\$DSTDIR/files/mozilla/\" 2>/dev/null")
-            // Copy signedInUser.json (Account Info - best effort)
             appendLine("cp -a \"\$SRCDIR/files/mozilla/signedInUser.json\" \"\$DSTDIR/files/mozilla/\" 2>/dev/null")
+            appendLine("cp -a \"\$SRCDIR/files/mozilla/account.json\" \"\$DSTDIR/files/mozilla/\" 2>/dev/null")
             
-            appendLine("find \"\$SRCDIR/files/mozilla\" -mindepth 1 -maxdepth 1 -type d -not -name 'Crash Reports' -not -name 'updates' -not -name 'extensions' | while read SRC_P_PATH; do")
+            // 2. Copy and Patch Profiles
+            appendLine("find \"\$SRCDIR/files/mozilla\" -mindepth 1 -maxdepth 1 -type d -not -name 'Crash Reports' -not -name 'updates' | while read SRC_P_PATH; do")
             appendLine("  P_NAME=\$(basename \"\$SRC_P_PATH\")")
             appendLine("  DST_P_PATH=\"\$DSTDIR/files/mozilla/\$P_NAME\"")
             appendLine("  echo \"CLONING_PROFILE=\$P_NAME\"")
             
-            // Copy entire profile folder
+            // Copy full profile folder
             appendLine("  cp -a \"\$SRC_P_PATH\" \"\$DSTDIR/files/mozilla/\"")
             
-            // Cleanup locks
+            // Cleanup locks and temp files
             appendLine("  rm -f \"\$DST_P_PATH/lock\"")
             appendLine("  rm -f \"\$DST_P_PATH/.parentlock\"")
+            appendLine("  rm -rf \"\$DST_P_PATH/startupCache\"")
             
-            // Patch prefs.js
-            appendLine("  if [ -f \"\$DST_P_PATH/prefs.js\" ]; then")
-            appendLine("    sed -i \"s|\$SRCDIR|\$DSTDIR|g\" \"\$DST_P_PATH/prefs.js\"")
-            appendLine("    echo \"PREFS_FIXED=DONE\"")
-            appendLine("  fi")
+            // Patch paths in prefs.js AND user.js
+            appendLine("  [ -f \"\$DST_P_PATH/prefs.js\" ] && sed -i \"s|\$SRCDIR|\$DSTDIR|g\" \"\$DST_P_PATH/prefs.js\"")
+            appendLine("  [ -f \"\$DST_P_PATH/user.js\" ] && sed -i \"s|\$SRCDIR|\$DSTDIR|g\" \"\$DST_P_PATH/user.js\"")
             appendLine("done")
+
+            // 3. Optional: Sync account data if it exists in databases
+            appendLine("cp -a \"\$SRCDIR/databases/storage_sync.db\"* \"\$DSTDIR/databases/\" 2>/dev/null")
             
             appendLine("")
             appendLine("echo CLONE=DONE")
