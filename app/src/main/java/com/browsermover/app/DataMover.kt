@@ -217,40 +217,39 @@ class DataMover {
             appendLine("")
 
             // ==========================================
-            // BETTER CLONE: Profile + Critical Meta
+            // DEEP CLONE: Profiles, Settings, and Databases
             // ==========================================
             appendLine("echo STEP=Cloning_data")
             
-            // Wipe target mozilla dir
-            appendLine("rm -rf \"\$DSTDIR/files/mozilla\"")
+            // 1. Core Profile Data
             appendLine("mkdir -p \"\$DSTDIR/files/mozilla\"")
-            
-            // 1. Copy Critical Metadata (Profiles list and account info)
             appendLine("cp -a \"\$SRCDIR/files/mozilla/profiles.ini\" \"\$DSTDIR/files/mozilla/\" 2>/dev/null")
             appendLine("cp -a \"\$SRCDIR/files/mozilla/signedInUser.json\" \"\$DSTDIR/files/mozilla/\" 2>/dev/null")
-            appendLine("cp -a \"\$SRCDIR/files/mozilla/account.json\" \"\$DSTDIR/files/mozilla/\" 2>/dev/null")
             
-            // 2. Copy and Patch Profiles
             appendLine("find \"\$SRCDIR/files/mozilla\" -mindepth 1 -maxdepth 1 -type d -not -name 'Crash Reports' -not -name 'updates' | while read SRC_P_PATH; do")
             appendLine("  P_NAME=\$(basename \"\$SRC_P_PATH\")")
             appendLine("  DST_P_PATH=\"\$DSTDIR/files/mozilla/\$P_NAME\"")
             appendLine("  echo \"CLONING_PROFILE=\$P_NAME\"")
-            
-            // Copy full profile folder
             appendLine("  cp -a \"\$SRC_P_PATH\" \"\$DSTDIR/files/mozilla/\"")
             
-            // Cleanup locks and temp files
-            appendLine("  rm -f \"\$DST_P_PATH/lock\"")
-            appendLine("  rm -f \"\$DST_P_PATH/.parentlock\"")
-            appendLine("  rm -rf \"\$DST_P_PATH/startupCache\"")
-            
-            // Patch paths in prefs.js AND user.js
+            // Patch paths in prefs.js
             appendLine("  [ -f \"\$DST_P_PATH/prefs.js\" ] && sed -i \"s|\$SRCDIR|\$DSTDIR|g\" \"\$DST_P_PATH/prefs.js\"")
-            appendLine("  [ -f \"\$DST_P_PATH/user.js\" ] && sed -i \"s|\$SRCDIR|\$DSTDIR|g\" \"\$DST_P_PATH/user.js\"")
             appendLine("done")
 
-            // 3. Optional: Sync account data if it exists in databases
-            appendLine("cp -a \"\$SRCDIR/databases/storage_sync.db\"* \"\$DSTDIR/databases/\" 2>/dev/null")
+            // 2. Settings (Firefox Account and Session info)
+            appendLine("echo STEP=Cloning_settings")
+            appendLine("cp -a \"\$SRCDIR/shared_prefs\" \"\$DSTDIR/\" 2>/dev/null")
+            // Patch Package Names in shared_prefs XMLs (Crucial for Account and State)
+            appendLine("find \"\$DSTDIR/shared_prefs\" -name '*.xml' -exec sed -i \"s|$srcPkg|$dstPkg|g\" {} + 2>/dev/null")
+            appendLine("find \"\$DSTDIR/shared_prefs\" -name '*.xml' -exec sed -i \"s|\$SRCDIR|\$DSTDIR|g\" {} + 2>/dev/null")
+
+            // 3. Databases (Tabs, History, Sync state)
+            appendLine("echo STEP=Cloning_databases")
+            appendLine("cp -a \"\$SRCDIR/databases\" \"\$DSTDIR/\" 2>/dev/null")
+            
+            // Cleanup to prevent GeckoView mismatch crash
+            appendLine("rm -rf \"\$DSTDIR/files/mozilla/*/startupCache\" 2>/dev/null")
+            appendLine("rm -f \"\$DSTDIR/files/mozilla/*/lock\" \"\$DSTDIR/files/mozilla/*/.parentlock\" 2>/dev/null")
             
             appendLine("")
             appendLine("echo CLONE=DONE")

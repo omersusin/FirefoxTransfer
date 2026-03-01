@@ -55,6 +55,7 @@ class BrowserDetector(private val context: Context) {
 
     fun detectInstalledBrowsers(filterType: BrowserType? = null): List<BrowserInfo> {
         val installed = mutableListOf<BrowserInfo>()
+        val pm = context.packageManager
 
         // 1. Check known browsers
         for (b in knownBrowsers) {
@@ -65,50 +66,56 @@ class BrowserDetector(private val context: Context) {
             }
         }
 
-        // 2. Auto-detect unknown browsers via intent query
+        // 2. Scan ALL installed apps for browser-like names/packages
         try {
-            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
-            intent.data = android.net.Uri.parse("https://example.com")
-            val resolveList = context.packageManager.queryIntentActivities(intent, 0)
+            val allPackages = pm.getInstalledPackages(0)
             val alreadyDetected = installed.map { it.packageName }.toSet()
 
-            for (info in resolveList) {
-                val pkg = info.activityInfo.packageName
+            for (pkgInfo in allPackages) {
+                val pkg = pkgInfo.packageName
                 if (pkg in alreadyDetected) continue
+                if (pkg == context.packageName) continue // Skip self
 
                 val appName = try {
-                    val ai = context.packageManager.getApplicationInfo(pkg, 0)
-                    context.packageManager.getApplicationLabel(ai).toString()
+                    pm.getApplicationLabel(pkgInfo.applicationInfo).toString()
                 } catch (e: Exception) { pkg }
+
+                val lowPkg = pkg.lowercase()
+                val lowName = appName.lowercase()
+
+                // Check if it's likely a browser
+                val isBrowser = lowPkg.contains("browser") || lowName.contains("browser") ||
+                                lowPkg.contains("firefox") || lowPkg.contains("chrome") ||
+                                lowPkg.contains("chromium") || lowPkg.contains("mozilla") ||
+                                lowPkg.contains("web") || lowPkg.contains("surf")
+
+                if (!isBrowser) continue
 
                 // Guess type
                 val guessedType = when {
-                    pkg.contains("firefox", true) || pkg.contains("mozilla", true) || 
-                    pkg.contains("fennec", true) || pkg.contains("fenix", true) ||
-                    pkg.contains("focus", true) || pkg.contains("klar", true) ||
-                    pkg.contains("icecat", true) || pkg.contains("iceraven", true) ||
-                    pkg.contains("waterfox", true) || pkg.contains("mull", true) ||
-                    appName.contains("Firefox", true) -> BrowserType.FIREFOX
+                    lowPkg.contains("firefox") || lowPkg.contains("mozilla") || 
+                    lowPkg.contains("fennec") || lowPkg.contains("fenix") ||
+                    lowPkg.contains("focus") || lowPkg.contains("klar") ||
+                    lowPkg.contains("icecat") || lowPkg.contains("iceraven") ||
+                    lowPkg.contains("mull") || lowPkg.contains("waterfox") ||
+                    lowName.contains("firefox") -> BrowserType.FIREFOX
                     
-                    pkg.contains("chrome", true) || pkg.contains("chromium", true) || 
-                    pkg.contains("brave", true) || pkg.contains("opera", true) ||
-                    pkg.contains("vivaldi", true) || pkg.contains("edge", true) ||
-                    pkg.contains("samsung", true) || pkg.contains("kiwi", true) ||
-                    appName.contains("Chrome", true) || appName.contains("Browser", true) -> BrowserType.CHROMIUM
+                    lowPkg.contains("chrome") || lowPkg.contains("chromium") || 
+                    lowPkg.contains("brave") || lowPkg.contains("opera") ||
+                    lowPkg.contains("vivaldi") || lowPkg.contains("edge") ||
+                    lowPkg.contains("samsung") || lowPkg.contains("kiwi") ||
+                    lowName.contains("chrome") -> BrowserType.CHROMIUM
                     
                     else -> BrowserType.UNKNOWN
                 }
 
-                // If filtering by Firefox, show Firefox-guessed OR Unknown (could be a fork)
-                // If filtering by Chromium, show Chromium-guessed OR Unknown
-                if (filterType != null) {
-                    if (guessedType != filterType && guessedType != BrowserType.UNKNOWN) continue
-                }
+                // If filtering, allow matches or Unknowns
+                if (filterType != null && guessedType != filterType && guessedType != BrowserType.UNKNOWN) continue
 
-                installed.add(BrowserInfo("$appName (Detected)", pkg, guessedType, true))
+                installed.add(BrowserInfo(appName, pkg, guessedType, true))
             }
         } catch (e: Exception) {
-            // Ignore
+            // Fallback to basic intent query if full scan fails
         }
 
         return installed
