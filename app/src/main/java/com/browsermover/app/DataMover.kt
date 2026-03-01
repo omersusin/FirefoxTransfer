@@ -258,13 +258,8 @@ class DataMover {
             appendLine("  cp -a \"\$SRC_P_PATH/browser-extension-data\" \"\$DST_P_PATH/\" 2>/dev/null")
             appendLine("  cp -a \"\$SRC_P_PATH/storage\" \"\$DST_P_PATH/\" 2>/dev/null")
             
-            // Cleanup dangerous files
-            appendLine("  rm -f \"\$DST_P_PATH/sessionstore.jsonlz4\"")
-            appendLine("  rm -rf \"\$DST_P_PATH/sessionstore-backups\"")
+            // Cleanup and Patch
             appendLine("  rm -f \"\$DST_P_PATH/compatibility.ini\"")
-            appendLine("  rm -f \"\$DST_P_PATH/pkcs11.txt\"")
-            appendLine("  rm -f \"\$DST_P_PATH/addonStartup.json.lz4\"")
-            appendLine("  rm -f \"\$DST_P_PATH/signedInUser.json\"")
             appendLine("  rm -f \"\$DST_P_PATH/lock\"")
             appendLine("  rm -f \"\$DST_P_PATH/.parentlock\"")
             
@@ -274,6 +269,10 @@ class DataMover {
             appendLine("    echo \"PREFS_FIXED=DONE\"")
             appendLine("  fi")
             appendLine("done")
+            appendLine("")
+
+            // Copy signedInUser.json if exists (Account Info)
+            appendLine("cp -a \"\$SRCDIR/files/mozilla/signedInUser.json\" \"\$DSTDIR/files/mozilla/\" 2>/dev/null")
             appendLine("")
 
             // Verify
