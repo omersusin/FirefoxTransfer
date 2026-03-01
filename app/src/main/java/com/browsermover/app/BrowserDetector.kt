@@ -11,118 +11,130 @@ import java.util.zip.ZipFile
 
 class BrowserDetector(private val context: Context) {
 
-    companion object {
-        private val GECKO_NATIVE_LIBS = setOf("libxul.so", "libmozglue.so")
-        private const val GECKO_LIB_MIN_MATCH = 2
-
-        private val CHROMIUM_NATIVE_LIBS = setOf(
-            "libchrome.so", "libmonochrome.so", "libchromeview.so",
-            "libstandalonebrowser.so", "libchromiumcontent.so"
+    private companion object {
+        val GECKO_LIBS = setOf("libxul.so", "libmozglue.so")
+        val CHROMIUM_LIBS = setOf(
+            "libchrome.so", "libmonochrome.so",
+            "libchromeview.so", "libstandalonebrowser.so",
+            "libchromiumcontent.so"
         )
-        private const val CHROMIUM_LIB_MIN_MATCH = 1
-
-        private const val GECKO_PROFILES_INI = "files/mozilla/profiles.ini"
-        private val CHROMIUM_DATA_MARKERS = listOf(
+        const val GECKO_MARKER = "files/mozilla/profiles.ini"
+        val CHROMIUM_MARKERS = listOf(
             "app_chrome/Default/Preferences",
             "app_chrome/Local State",
-            "app_chromium/Default/Preferences",
-            "app_user/Default/Preferences"
+            "app_chromium/Default/Preferences"
         )
     }
 
-    fun detectInstalledBrowsers(engineFilter: BrowserType? = null): List<BrowserInfo> {
-        val candidates = findBrowserCandidates()
-        val webViewPackages = getWebViewProviderPackages()
+    fun detectInstalledBrowsers(filterType: BrowserType? = null): List<BrowserInfo> {
+        val webViewPkgs = getWebViewProviders()
         val results = mutableListOf<BrowserInfo>()
 
-        for (candidate in candidates) {
-            val pkg = candidate.activityInfo.packageName
-            if (pkg in webViewPackages) continue
-
-            val engine = detectEngine(pkg)
-            if (engine == BrowserType.UNKNOWN) continue
-            if (engineFilter != null && engine != engineFilter) continue
-
-            val appLabel = candidate.loadLabel(context.packageManager).toString()
-            results.add(BrowserInfo(appLabel, pkg, engine, true))
-        }
+        getBrowserPackages()
+            .filter { it !in webViewPkgs }
+            .forEach { pkg ->
+                val engine = identifyEngine(pkg)
+                if (engine != BrowserType.UNKNOWN) {
+                    if (filterType == null || engine == filterType) {
+                        val appLabel = getAppLabel(pkg)
+                        results.add(BrowserInfo(appLabel, pkg, engine, true))
+                    }
+                }
+            }
 
         return results.sortedBy { it.name.lowercase() }
     }
 
-    private fun findBrowserCandidates(): List<ResolveInfo> {
+    private fun getBrowserPackages(): Set<String> {
         val pm = context.packageManager
         val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com"))
-        val webHandlers = pm.queryIntentActivities(webIntent, PackageManager.MATCH_ALL)
-        val webHandlerPackages = webHandlers.map { it.activityInfo.packageName }.toSet()
+        val webPkgs = pm.queryIntentActivities(webIntent, PackageManager.MATCH_ALL)
+            .map { it.activityInfo.packageName }.toSet()
 
-        val launcherIntent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
-        val launcherApps = pm.queryIntentActivities(launcherIntent, 0)
-        val launcherPackages = launcherApps.map { it.activityInfo.packageName }.toSet()
+        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val launcherPkgs = pm.queryIntentActivities(launcherIntent, 0)
+            .map { it.activityInfo.packageName }.toSet()
 
-        val validPackages = webHandlerPackages.intersect(launcherPackages)
-        return webHandlers.filter { it.activityInfo.packageName in validPackages }
-            .distinctBy { it.activityInfo.packageName }
+        return webPkgs.intersect(launcherPkgs)
     }
 
-    private fun getWebViewProviderPackages(): Set<String> {
-        val packages = mutableSetOf<String>()
+    private fun getWebViewProviders(): Set<String> {
+        val pkgs = mutableSetOf<String>()
         try {
-            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", "dumpsys webviewupdate 2>/dev/null"))
-            val output = process.inputStream.bufferedReader().readText()
-            process.waitFor()
-            Regex("""packageName\s*[=:]\s*(\S+)""").findAll(output).forEach { packages.add(it.groupValues[1].trim()) }
+            val out = RootHelper.executeCommand("dumpsys webviewupdate 2>/dev/null").output
+            Regex("""packageName\s*[=:]\s*(\S+)""").findAll(out).forEach { pkgs.add(it.groupValues[1]) }
         } catch (_: Exception) {}
-        return packages
+        return pkgs
     }
 
-    private fun detectEngine(packageName: String): BrowserType {
+    private fun identifyEngine(pkg: String): BrowserType {
         // 1. Native Libs
-        val nativeEngine = detectEngineByNativeLibs(packageName)
-        if (nativeEngine != BrowserType.UNKNOWN) return nativeEngine
+        val libEngine = checkNativeLibs(pkg)
+        if (libEngine != BrowserType.UNKNOWN) return libEngine
 
-        // 2. Data Dir
-        val dataEngine = detectEngineByDataDir(packageName)
+        // 2. Data Markers
+        val dataEngine = checkDataMarkers(pkg)
         if (dataEngine != BrowserType.UNKNOWN) return dataEngine
 
-        return BrowserType.UNKNOWN
+        // 3. Heuristics
+        return checkHeuristics(pkg)
     }
 
-    private fun detectEngineByNativeLibs(packageName: String): BrowserType {
+    private fun checkNativeLibs(pkg: String): BrowserType {
         val pm = context.packageManager
-        val apkPaths = mutableListOf<String>()
-        try {
-            val appInfo = pm.getApplicationInfo(packageName, 0)
-            appInfo.sourceDir?.let { apkPaths.add(it) }
-            appInfo.splitSourceDirs?.forEach { apkPaths.add(it) }
-        } catch (_: Exception) { return BrowserType.UNKNOWN }
+        val appInfo = try { pm.getApplicationInfo(pkg, 0) } catch (_: Exception) { return BrowserType.UNKNOWN }
+        val apks = mutableListOf<String>()
+        appInfo.sourceDir?.let { apks.add(it) }
+        appInfo.splitSourceDirs?.forEach { apks.add(it) }
 
-        val foundLibs = mutableSetOf<String>()
-        for (path in apkPaths) {
+        val libs = mutableSetOf<String>()
+        for (apk in apks) {
             try {
-                ZipFile(path).use { zip ->
-                    zip.entries().asSequence().filter { it.name.startsWith("lib/") && it.name.endsWith(".so") }
-                        .forEach { foundLibs.add(it.name.substringAfterLast('/')) }
+                ZipFile(apk).use { zip ->
+                    zip.entries().asSequence()
+                        .filter { it.name.startsWith("lib/") && it.name.endsWith(".so") }
+                        .forEach { libs.add(it.name.substringAfterLast('/')) }
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) { continue }
         }
 
-        if (foundLibs.count { it in GECKO_NATIVE_LIBS } >= GECKO_LIB_MIN_MATCH) return BrowserType.GECKO
-        if (foundLibs.count { it in CHROMIUM_NATIVE_LIBS } >= CHROMIUM_LIB_MIN_MATCH) return BrowserType.CHROMIUM
+        if (libs.containsAll(GECKO_LIBS)) return BrowserType.GECKO
+        if (libs.any { it in CHROMIUM_LIBS }) return BrowserType.CHROMIUM
         return BrowserType.UNKNOWN
     }
 
-    private fun detectEngineByDataDir(packageName: String): BrowserType {
-        val dataDir = "/data/data/$packageName"
-        if (RootHelper.executeCommand("[ -f '$dataDir/$GECKO_PROFILES_INI' ]").success) return BrowserType.GECKO
-        for (marker in CHROMIUM_DATA_MARKERS) {
-            if (RootHelper.executeCommand("[ -f '$dataDir/$marker' ]").success) return BrowserType.CHROMIUM
+    private fun checkDataMarkers(pkg: String): BrowserType {
+        if (RootHelper.executeCommand("[ -e '/data/data/$pkg/$GECKO_MARKER' ]").success) return BrowserType.GECKO
+        for (m in CHROMIUM_MARKERS) {
+            if (RootHelper.executeCommand("[ -e '/data/data/$pkg/$m' ]").success) return BrowserType.CHROMIUM
         }
         return BrowserType.UNKNOWN
+    }
+
+    private fun checkHeuristics(pkg: String): BrowserType {
+        val data = "/data/data/$pkg"
+        var geckoScore = 0
+        var chromiumScore = 0
+        if (RootHelper.executeCommand("[ -f '$data/files/mozilla/installs.ini' ]").success) geckoScore++
+        if (RootHelper.executeCommand("[ -f '$data/shared_prefs/GeckoPreferences.xml' ]").success) geckoScore++
+        if (RootHelper.executeCommand("grep -rql 'gecko\\|GeckoView' '$data/shared_prefs/' 2>/dev/null").success) geckoScore++
+
+        if (RootHelper.executeCommand("[ -d '$data/app_tabs' ]").success) chromiumScore++
+        if (RootHelper.executeCommand("[ -f '$data/databases/ChromeData.db' ]").success) chromiumScore++
+
+        if (geckoScore >= 2) return BrowserType.GECKO
+        if (chromiumScore >= 2) return BrowserType.CHROMIUM
+        return BrowserType.UNKNOWN
+    }
+
+    private fun getAppLabel(pkg: String): String {
+        return try {
+            val pm = context.packageManager
+            pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+        } catch (_: Exception) { pkg }
     }
 
     fun getCompatibleTargets(source: BrowserInfo, allBrowsers: List<BrowserInfo>): List<BrowserInfo> {
-        // Only show browsers of the same family (GECKO -> GECKO, CHROMIUM -> CHROMIUM)
         return allBrowsers.filter { it.packageName != source.packageName && it.type == source.type }
     }
 }

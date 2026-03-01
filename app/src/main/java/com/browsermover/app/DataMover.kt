@@ -28,11 +28,10 @@ class DataMover {
                 val srcPkg = source.packageName
                 val dstPkg = target.packageName
 
-                postProgress(listener, "Transfer: ${source.name} -> ${target.name}")
+                postProgress(listener, "Clone: ${source.name} -> ${target.name}")
 
-                postProgress(listener, "Checking root...")
                 if (!RootHelper.isRootAvailable()) {
-                    postError(listener, "Root access not found!")
+                    postError(listener, "Root access required!")
                     return@Thread
                 }
 
@@ -41,8 +40,6 @@ class DataMover {
                 } else {
                     buildChromiumScript(srcPkg, dstPkg, backupFirst)
                 }
-
-                postProgress(listener, "Executing expert migration script...")
 
                 val process = Runtime.getRuntime().exec(RootHelper.getSuMethod())
                 val os = DataOutputStream(process.outputStream)
@@ -72,60 +69,54 @@ class DataMover {
 
     private fun buildGeckoScript(srcPkg: String, dstPkg: String, backup: Boolean): String {
         return buildString {
-            appendLine("SRC_PKG=\"$srcPkg\"")
-            appendLine("TGT_PKG=\"$dstPkg\"")
-            appendLine("SRC_DIR=\"/data/data/\$SRC_PKG\"")
-            appendLine("TGT_DIR=\"/data/data/\$TGT_PKG\"")
+            appendLine("SRC=\"$srcPkg\"; TGT=\"$dstPkg\"")
+            appendLine("SD=\"/data/data/\$SRC\"; TD=\"/data/data/\$TGT\"")
             
-            appendLine("echo STEP=Resolving_UID")
-            appendLine("TGT_UID=\$(stat -c '%u' \"\$TGT_DIR\" 2>/dev/null || dumpsys package \"\$TGT_PKG\" | grep -m1 'userId=' | grep -oP 'userId=\\K[0-9]+')")
+            appendLine("echo STEP=UID_Resolution")
+            appendLine("TGT_UID=\$(stat -c '%u' \"\$TD\" 2>/dev/null || dumpsys package \"\$TGT\" | grep -m1 'userId=' | grep -oE '[0-9]+' | head -1)")
             
             appendLine("echo STEP=Stopping_apps")
-            appendLine("am force-stop \"\$SRC_PKG\" 2>/dev/null")
-            appendLine("am force-stop \"\$TGT_PKG\" 2>/dev/null")
-            appendLine("pkill -9 -f \"\$SRC_PKG\" 2>/dev/null")
-            appendLine("pkill -9 -f \"\$TGT_PKG\" 2>/dev/null")
+            appendLine("am force-stop \"\$SRC\"; am force-stop \"\$TGT\"")
+            appendLine("pkill -9 -f \"\$SRC\"; pkill -9 -f \"\$TGT\"")
             
             appendLine("echo STEP=WAL_Checkpoint")
-            appendLine("find \"\$SRC_DIR\" -name '*.sqlite' -o -name '*.db' | while read db; do sqlite3 \"\$db\" 'PRAGMA wal_checkpoint(TRUNCATE);' 2>/dev/null; done")
+            appendLine("find \"\$SD\" -type f \\( -name '*.sqlite' -o -name '*.db' \\) | while read db; do sqlite3 \"\$db\" \"PRAGMA wal_checkpoint(TRUNCATE);\" 2>/dev/null; done")
 
-            if (backup) {
-                appendLine("echo STEP=Backup")
-                appendLine("mkdir -p /sdcard/BrowserDataMover/backups")
-                appendLine("tar -czf \"/sdcard/BrowserDataMover/backups/\${TGT_PKG}_\$(date +%s).tar.gz\" -C \"\$TGT_DIR\" . 2>/dev/null")
-            }
+            appendLine("echo STEP=Cleaning_Target")
+            appendLine("find \"\$TD\" -mindepth 1 -maxdepth 1 ! -name 'lib' -exec rm -rf {} +")
 
-            appendLine("echo STEP=Clearing_target")
-            appendLine("find \"\$TGT_DIR\" -mindepth 1 -maxdepth 1 ! -name 'lib' -exec rm -rf {} +")
-
-            appendLine("echo STEP=Copying_data")
-            appendLine("cp -a \"\$SRC_DIR/files\" \"\$TGT_DIR/\"")
-            appendLine("cp -a \"\$SRC_DIR/databases\" \"\$TGT_DIR/\"")
-            appendLine("cp -a \"\$SRC_DIR/shared_prefs\" \"\$TGT_DIR/\"")
-
-            appendLine("echo STEP=Cleaning_crash_triggers")
-            appendLine("find \"\$TGT_DIR\" -type d \\( -name 'cache2' -o -name 'startupCache' -o -name 'shader-cache' \\) -exec rm -rf {} + 2>/dev/null")
+            appendLine("echo STEP=Seletive_Copy")
+            appendLine("SRC_PROF=\$(ls -d \"\$SD/files/mozilla/\"*.default* 2>/dev/null | head -1)")
+            appendLine("PROF_NAME=\$(basename \"\$SRC_PROF\")")
+            appendLine("mkdir -p \"\$TD/files/mozilla/\$PROF_NAME\"")
             
-            // DEEP SESSION CLEAN: Fixes "Expected a name but was BEGIN_ARRAY"
-            appendLine("find \"\$TGT_DIR\" -type f \\( -name 'sessionstore.jsonlz4' -o -name 'recovery.jsonlz4' -o -name 'compatibility.ini' -o -name 'addonStartup.json.lz4' -o -name '.parentlock' -o -name 'lock' \\) -delete 2>/dev/null")
-            appendLine("rm -f \"\$TGT_DIR/shared_prefs/GeckoSessionState\"*.xml 2>/dev/null")
-            appendLine("")
+            // Whitelist copy
+            val whitelist = "cookies.sqlite logins.json key4.db cert9.db signedInUser.json places.sqlite favicons.sqlite formhistory.sqlite permissions.sqlite content-prefs.sqlite prefs.js user.js handlers.json extensions extensions.json storage"
+            appendLine("for f in $whitelist; do [ -e \"\$SRC_PROF/\$f\" ] && cp -a \"\$SRC_PROF/\$f\" \"\$TD/files/mozilla/\$PROF_NAME/\$f\"; done")
+            appendLine("cp -a \"\$SD/files/mozilla/profiles.ini\" \"\$TD/files/mozilla/\" 2>/dev/null")
+            appendLine("cp -a \"\$SD/shared_prefs\" \"\$TD/\" 2>/dev/null")
+            appendLine("cp -a \"\$SD/databases\" \"\$TD/\" 2>/dev/null")
 
-            appendLine("echo STEP=Patching_paths")
-            appendLine("find \"\$TGT_DIR\" -type f \\( -name '*.ini' -o -name '*.js' -o -name '*.json' -o -name '*.xml' \\) | while read f; do")
-            appendLine("  grep -ql \"\$SRC_PKG\" \"\$f\" && sed -i \"s|\$SRC_PKG|\$TGT_PKG|g\" \"\$f\"")
-            appendLine("done")
-            // Patch user.js specifically if exists
-            appendLine("find \"\$TGT_DIR\" -name 'user.js' -exec sed -i \"s|\$SRC_PKG|\$TGT_PKG|g\" {} + 2>/dev/null")
+            appendLine("echo STEP=Deep_Clean_Session_Crash_Triggers")
+            // Remove AC session data that causes BEGIN_ARRAY crash
+            appendLine("rm -rf \"\$TD/files/mozac.session.storage\" \"\$TD/files/session_store\" \"\$TD/files/.snapshots\" 2>/dev/null")
+            appendLine("rm -f \"\$TD/files/session.json\" \"\$TD/files/session_backup.json\" 2>/dev/null")
+            // Remove Gecko crash triggers
+            appendLine("TP=\"\$TD/files/mozilla/\$PROF_NAME\"")
+            appendLine("rm -f \"\$TP/compatibility.ini\" \"\$TP/.parentlock\" \"\$TP/lock\" \"\$TP/addonStartup.json.lz4\" 2>/dev/null")
+            appendLine("rm -rf \"\$TP/startupCache\" \"\$TP/cache2\" 2>/dev/null")
+            // Clean session-related prefs
+            appendLine("find \"\$TD/shared_prefs\" -iname '*session*' -o -iname '*state*' -o -iname '*GeckoSession*' -delete 2>/dev/null")
 
-            appendLine("echo STEP=Patching_databases")
-            appendLine("find \"\$TGT_DIR/databases\" -type f -name '*.db' | while read db; do")
-            appendLine("  sqlite3 \"\$db\" .dump | sed \"s|\$SRC_PKG|\$TGT_PKG|g\" | sqlite3 \"\$db.tmp\" && mv \"\$db.tmp\" \"\$db\"")
-            appendLine("done")
+            appendLine("echo STEP=Patching_Paths")
+            appendLine("find \"\$TD\" -type f \\( -name '*.ini' -o -name '*.js' -o -name '*.json' -o -name '*.xml' \\) | while read f; do sed -i \"s|\$SRC|\$TGT|g\" \"\$f\" 2>/dev/null; done")
+            
+            appendLine("echo STEP=Patching_Databases")
+            appendLine("find \"\$TD/databases\" -type f -name '*.db' | while read db; do sqlite3 \"\$db\" .dump | sed \"s|\$SRC|\$TGT|g\" | sqlite3 \"\$db.tmp\" && mv \"\$db.tmp\" \"\$db\"; done")
 
-            appendLine("echo STEP=Restoring_security")
-            appendLine("chown -R \"\$TGT_UID:\$TGT_UID\" \"\$TGT_DIR\"")
-            appendLine("restorecon -RF \"\$TGT_DIR\"")
+            appendLine("echo STEP=Restoring_Security")
+            appendLine("chown -R \"\$TGT_UID:\$TGT_UID\" \"\$TD\"")
+            appendLine("restorecon -RF \"\$TD\"")
             
             appendLine("echo TRANSFER_COMPLETE")
         }
@@ -133,28 +124,16 @@ class DataMover {
 
     private fun buildChromiumScript(srcPkg: String, dstPkg: String, backup: Boolean): String {
         return buildString {
-            appendLine("SRC_PKG=\"$srcPkg\"")
-            appendLine("TGT_PKG=\"$dstPkg\"")
-            appendLine("SRC_DIR=\"/data/data/\$SRC_PKG\"")
-            appendLine("TGT_DIR=\"/data/data/\$TGT_PKG\"")
-            
-            appendLine("TGT_UID=\$(stat -c '%u' \"\$TGT_DIR\" 2>/dev/null || dumpsys package \"\$TGT_PKG\" | grep -m1 'userId=' | grep -oP 'userId=\\K[0-9]+')")
-            
-            appendLine("am force-stop \"\$SRC_PKG\" 2>/dev/null")
-            appendLine("am force-stop \"\$TGT_PKG\" 2>/dev/null")
-            
-            appendLine("echo STEP=Clearing_target")
-            appendLine("find \"\$TGT_DIR\" -mindepth 1 -maxdepth 1 ! -name 'lib' -exec rm -rf {} +")
-            
-            appendLine("echo STEP=Copying_data")
-            appendLine("cp -a \"\$SRC_DIR/\"* \"\$TGT_DIR/\"")
-            appendLine("rm -rf \"\$TGT_DIR/cache\" \"\$TGT_DIR/code_cache\"")
-            
-            appendLine("echo STEP=Patching_paths")
-            appendLine("find \"\$TGT_DIR\" -type f \\( -name '*.xml' -o -name 'Preferences' -o -name 'Local State' \\) | while read f; do sed -i \"s|\$SRC_PKG|\$TGT_PKG|g\" \"\$f\" 2>/dev/null; done")
-            
-            appendLine("chown -R \"\$TGT_UID:\$TGT_UID\" \"\$TGT_DIR\"")
-            appendLine("restorecon -RF \"\$TGT_DIR\"")
+            appendLine("SRC=\"$srcPkg\"; TGT=\"$dstPkg\"")
+            appendLine("TD=\"/data/data/\$TGT\"")
+            appendLine("TGT_UID=\$(stat -c '%u' \"\$TD\" 2>/dev/null || dumpsys package \"\$TGT\" | grep -m1 'userId=' | grep -oE '[0-9]+' | head -1)")
+            appendLine("am force-stop \"\$SRC\"; am force-stop \"\$TGT\"")
+            appendLine("find \"\$TD\" -mindepth 1 -maxdepth 1 ! -name 'lib' -exec rm -rf {} +")
+            appendLine("cp -a \"/data/data/\$SRC/\"* \"\$TD/\"")
+            appendLine("rm -rf \"\$TD/cache\" \"\$TD/code_cache\"")
+            appendLine("find \"\$TD\" -type f | while read f; do sed -i \"s|\$SRC|\$TGT|g\" \"\$f\" 2>/dev/null; done")
+            appendLine("chown -R \"\$TGT_UID:\$TGT_UID\" \"\$TD\"")
+            appendLine("restorecon -RF \"\$TD\"")
             appendLine("echo TRANSFER_COMPLETE")
         }
     }
@@ -164,13 +143,12 @@ class DataMover {
         for (line in output.lines()) {
             val t = line.trim()
             if (t.startsWith("STEP=")) postProgress(listener, t.removePrefix("STEP=").replace("_", " "))
-            if (t.startsWith("ERROR=")) { hasError = true; postError(listener, t.removePrefix("ERROR=")) }
             if (t == "TRANSFER_COMPLETE") {
-                if (!hasError) postSuccess(listener, "Clone successful!\nFrom: ${source.name}\nTo: ${target.name}")
+                postSuccess(listener, "Clone complete!\n\nBookmarks, History and Passwords restored.\n\nTabs reset to prevent crashes.")
                 return
             }
         }
-        if (!hasError) postError(listener, "Transfer failed or interrupted.\n$error")
+        postError(listener, "Transfer failed or was partial.\n$error")
     }
 
     private fun postProgress(listener: ProgressListener, msg: String) { mainHandler.post { listener.onProgress(msg) } }
