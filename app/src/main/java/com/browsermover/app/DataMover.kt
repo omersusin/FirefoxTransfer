@@ -195,10 +195,17 @@ class DataMover {
             appendLine("rm -f \"\$DSTDIR/databases/focus.db\"* 2>/dev/null")
             appendLine("rm -f \"\$DSTDIR/databases/iceraven.db\"* 2>/dev/null")
             appendLine("rm -f \"\$DSTDIR/databases/browser.db\"* 2>/dev/null")
+            appendLine("rm -f \"\$DSTDIR/databases/history.db\"* 2>/dev/null")
+            appendLine("rm -f \"\$DSTDIR/databases/metrics.db\"* 2>/dev/null")
             appendLine("rm -f \"\$DSTDIR/databases/tabs.db\"* 2>/dev/null")
             appendLine("rm -f \"\$DSTDIR/databases/top_sites.db\"* 2>/dev/null")
             appendLine("rm -f \"\$DSTDIR/databases/recent_tabs.db\"* 2>/dev/null")
             appendLine("rm -f \"\$DSTDIR/databases/recently_closed.db\"* 2>/dev/null")
+            appendLine("")
+
+            // Clear GeckoView junk
+            appendLine("rm -rf \"\$DSTDIR/files/mozilla/Crash Reports\" 2>/dev/null")
+            appendLine("rm -rf \"\$DSTDIR/files/mozilla/updates\" 2>/dev/null")
             appendLine("")
 
             // Nuke cache
@@ -216,29 +223,26 @@ class DataMover {
             appendLine("mkdir -p \"\$DSTDIR/files/mozilla\"")
             appendLine("")
 
-            // Find or create target profile dir
-            appendLine("DST_PROFILE_DIR=\$(ls -d \$DSTDIR/files/mozilla/*.default* 2>/dev/null | head -1)")
-            appendLine("if [ -z \"\$DST_PROFILE_DIR\" ]; then")
-            appendLine("  DST_PROFILE_DIR=\$(ls -d \$DSTDIR/files/mozilla/*/ 2>/dev/null | grep -v 'Crash' | head -1)")
-            appendLine("fi")
-            appendLine("if [ -z \"\$DST_PROFILE_DIR\" ]; then")
-            appendLine("  SRC_PROFILE_NAME=\$(basename \$SRC_PROFILE_DIR)")
-            appendLine("  DST_PROFILE_DIR=\"\$DSTDIR/files/mozilla/\$SRC_PROFILE_NAME\"")
-            appendLine("  mkdir -p \"\$DST_PROFILE_DIR\"")
-            appendLine("  echo \"CREATED_PROFILE=\$DST_PROFILE_DIR\"")
-            appendLine("fi")
+            // We will use the SAME profile directory name as source to ensure profiles.ini works perfectly
+            appendLine("SRC_PROFILE_NAME=\$(basename \$SRC_PROFILE_DIR)")
+            appendLine("DST_PROFILE_DIR=\"\$DSTDIR/files/mozilla/\$SRC_PROFILE_NAME\"")
+            
+            // Remove ANY existing profile directories in target to avoid confusion
+            appendLine("rm -rf \"\$DSTDIR\"/files/mozilla/*.default* 2>/dev/null")
+            appendLine("rm -rf \"\$DSTDIR\"/files/mozilla/profiles/* 2>/dev/null")
+            
+            appendLine("mkdir -p \"\$DST_PROFILE_DIR\"")
             appendLine("echo \"DST_PROFILE=\$DST_PROFILE_DIR\"")
-            appendLine("")
-
-            // Clear target profile
-            appendLine("echo STEP=Clearing_target_profile")
-            appendLine("rm -rf \"\$DST_PROFILE_DIR\"/*")
             appendLine("")
 
             // Also remove session files from source profile before copy
             appendLine("echo STEP=Copying_profile_data")
 
             // Copy important files one by one
+            // Removed: compatibility.ini (causes version mismatch errors)
+            // Removed: pkcs11.txt (contains absolute paths)
+            // Removed: addonStartup.json.lz4 (contains absolute paths to extensions)
+            // Removed: signedInUser.json (sync state can cause crashes across different pkgs)
             val importantFiles = listOf(
                 "places.sqlite", "places.sqlite-wal", "places.sqlite-shm",
                 "cookies.sqlite", "cookies.sqlite-wal", "cookies.sqlite-shm",
@@ -256,16 +260,19 @@ class DataMover {
                 "search.json.mozlz4",
                 "handlers.json",
                 "xulstore.json",
-                "SiteSecurityServiceState.txt",
-                "addonStartup.json.lz4",
-                "compatibility.ini",
-                "pkcs11.txt",
-                "signedInUser.json"
+                "SiteSecurityServiceState.txt"
             )
 
             for (f in importantFiles) {
                 appendLine("cp -a \"\$SRC_PROFILE_DIR/$f\" \"\$DST_PROFILE_DIR/\" 2>/dev/null")
             }
+            appendLine("")
+
+            // FIX ABSOLUTE PATHS in prefs.js (CRITICAL for forks/different package names)
+            appendLine("if [ -f \"\$DST_PROFILE_DIR/prefs.js\" ]; then")
+            appendLine("  sed -i \"s|\$SRCDIR|\$DSTDIR|g\" \"\$DST_PROFILE_DIR/prefs.js\"")
+            appendLine("  echo \"PREFS_FIXED=DONE\"")
+            appendLine("fi")
             appendLine("")
 
             // Copy extensions
@@ -292,9 +299,15 @@ class DataMover {
             appendLine("cp -a \"\$SRCDIR/files/mozilla/installs.ini\" \"\$DSTDIR/files/mozilla/\" 2>/dev/null")
             appendLine("")
 
+            // Fix installs.ini (remove it as it is package-specific)
+            appendLine("rm -f \"\$DSTDIR/files/mozilla/installs.ini\" 2>/dev/null")
+            appendLine("")
+
             // DO NOT COPY session files from source profile either
             appendLine("rm -f \"\$DST_PROFILE_DIR/sessionstore.jsonlz4\" 2>/dev/null")
             appendLine("rm -rf \"\$DST_PROFILE_DIR/sessionstore-backups\" 2>/dev/null")
+            appendLine("rm -f \"\$DST_PROFILE_DIR/lock\" 2>/dev/null")
+            appendLine("rm -f \"\$DST_PROFILE_DIR/.parentlock\" 2>/dev/null")
             appendLine("echo SESSION_SKIP=Done")
             appendLine("")
 
@@ -464,6 +477,7 @@ class DataMover {
                 t.startsWith("CHECK_") -> postProgress(listener, "✓ ${t.replace("=", ": ")}")
                 t.startsWith("BACKUP=") -> postProgress(listener, if (t == "BACKUP=OK") "✅ Backup saved" else "⚠️ Backup failed")
                 t == "COPY=DONE" -> postProgress(listener, "✅ Copy complete")
+                t == "PREFS_FIXED=DONE" -> postProgress(listener, "✅ Patched absolute paths")
                 t == "SESSION_CLEAN=DONE" -> postProgress(listener, "✅ Session data cleared")
                 t == "FINAL_CLEAN=DONE" -> postProgress(listener, "✅ Final cleanup done")
                 t == "EXTENSIONS=COPIED" -> postProgress(listener, "✅ Extensions copied")
