@@ -28,18 +28,14 @@ class DataMover {
                 val srcPkg = source.packageName
                 val dstPkg = target.packageName
 
-                postProgress(listener, "Clone: ${source.name} -> ${target.name}")
+                postProgress(listener, "Clone: $srcPkg -> $dstPkg")
 
                 if (!RootHelper.isRootAvailable()) {
                     postError(listener, "Root access required!")
                     return@Thread
                 }
 
-                val script = if (source.type == BrowserType.GECKO) {
-                    buildGeckoScript(srcPkg, dstPkg, backupFirst)
-                } else {
-                    buildChromiumScript(srcPkg, dstPkg, backupFirst)
-                }
+                val script = buildExpertScript(srcPkg, dstPkg, backupFirst)
 
                 val process = Runtime.getRuntime().exec(RootHelper.getSuMethod())
                 val os = DataOutputStream(process.outputStream)
@@ -67,73 +63,76 @@ class DataMover {
         }.start()
     }
 
-    private fun buildGeckoScript(srcPkg: String, dstPkg: String, backup: Boolean): String {
+    private fun buildExpertScript(src: String, tgt: String, backup: Boolean): String {
         return buildString {
-            appendLine("SRC=\"$srcPkg\"; TGT=\"$dstPkg\"")
+            appendLine("SRC=\"$src\"; TGT=\"$tgt\"")
             appendLine("SD=\"/data/data/\$SRC\"; TD=\"/data/data/\$TGT\"")
             
+            // 1. UID Resolution
             appendLine("echo STEP=UID_Resolution")
             appendLine("TGT_UID=\$(stat -c '%u' \"\$TD\" 2>/dev/null || dumpsys package \"\$TGT\" | grep -m1 'userId=' | grep -oE '[0-9]+' | head -1)")
-            
-            appendLine("echo STEP=Stopping_apps")
+            appendLine("SRC_APK=\$(pm path \"\$SRC\" 2>/dev/null | head -1 | sed 's|^package:||;s|/base.apk$||')")
+            appendLine("TGT_APK=\$(pm path \"\$TGT\" 2>/dev/null | head -1 | sed 's|^package:||;s|/base.apk$||')")
+
+            // 2. Stop Apps
+            appendLine("echo STEP=Stopping_applications")
             appendLine("am force-stop \"\$SRC\"; am force-stop \"\$TGT\"")
             appendLine("pkill -9 -f \"\$SRC\"; pkill -9 -f \"\$TGT\"")
-            
+            appendLine("sync")
+
+            // 3. WAL Checkpoint
             appendLine("echo STEP=WAL_Checkpoint")
             appendLine("find \"\$SD\" -type f \\( -name '*.sqlite' -o -name '*.db' \\) | while read db; do sqlite3 \"\$db\" \"PRAGMA wal_checkpoint(TRUNCATE);\" 2>/dev/null; done")
 
-            appendLine("echo STEP=Cleaning_Target")
+            // 4. Wipe Target
+            appendLine("echo STEP=Clearing_target")
             appendLine("find \"\$TD\" -mindepth 1 -maxdepth 1 ! -name 'lib' -exec rm -rf {} +")
 
-            appendLine("echo STEP=Seletive_Copy")
+            // 5. Selective Copy (Whitelist)
+            appendLine("echo STEP=Copying_data")
             appendLine("SRC_PROF=\$(ls -d \"\$SD/files/mozilla/\"*.default* 2>/dev/null | head -1)")
             appendLine("PROF_NAME=\$(basename \"\$SRC_PROF\")")
-            appendLine("mkdir -p \"\$TD/files/mozilla/\$PROF_NAME\"")
+            appendLine("TGT_PROF=\"\$TD/files/mozilla/\$PROF_NAME\"")
+            appendLine("mkdir -p \"\$TGT_PROF\"")
             
-            // Whitelist copy
-            val whitelist = "cookies.sqlite logins.json key4.db cert9.db signedInUser.json places.sqlite favicons.sqlite formhistory.sqlite permissions.sqlite content-prefs.sqlite prefs.js user.js handlers.json extensions extensions.json storage"
-            appendLine("for f in $whitelist; do [ -e \"\$SRC_PROF/\$f\" ] && cp -a \"\$SRC_PROF/\$f\" \"\$TD/files/mozilla/\$PROF_NAME/\$f\"; done")
+            val profileWhitelist = "cookies.sqlite logins.json key4.db cert9.db signedInUser.json places.sqlite favicons.sqlite formhistory.sqlite permissions.sqlite content-prefs.sqlite prefs.js user.js handlers.json extensions extensions.json storage"
+            appendLine("for f in $profileWhitelist; do [ -e \"\$SRC_PROF/\$f\" ] && cp -a \"\$SRC_PROF/\$f\" \"\$TGT_PROF/\$f\"; done")
             appendLine("cp -a \"\$SD/files/mozilla/profiles.ini\" \"\$TD/files/mozilla/\" 2>/dev/null")
             appendLine("cp -a \"\$SD/shared_prefs\" \"\$TD/\" 2>/dev/null")
             appendLine("cp -a \"\$SD/databases\" \"\$TD/\" 2>/dev/null")
 
-            appendLine("echo STEP=Deep_Clean_Session_Crash_Triggers")
-            // Remove AC session data that causes BEGIN_ARRAY crash
+            // 6. Aggressive Crash Fix (Delete Poisonous Files)
+            appendLine("echo STEP=Aggressive_Cleanup")
+            // AC Session
             appendLine("rm -rf \"\$TD/files/mozac.session.storage\" \"\$TD/files/session_store\" \"\$TD/files/.snapshots\" 2>/dev/null")
             appendLine("rm -f \"\$TD/files/session.json\" \"\$TD/files/session_backup.json\" 2>/dev/null")
-            // Remove Gecko crash triggers
-            appendLine("TP=\"\$TD/files/mozilla/\$PROF_NAME\"")
-            appendLine("rm -f \"\$TP/compatibility.ini\" \"\$TP/.parentlock\" \"\$TP/lock\" \"\$TP/addonStartup.json.lz4\" 2>/dev/null")
-            appendLine("rm -rf \"\$TP/startupCache\" \"\$TP/cache2\" 2>/dev/null")
-            // Clean session-related prefs
-            appendLine("find \"\$TD/shared_prefs\" -iname '*session*' -o -iname '*state*' -o -iname '*GeckoSession*' -delete 2>/dev/null")
+            // Gecko Crash
+            appendLine("rm -f \"\$TGT_PROF/compatibility.ini\" \"\$TGT_PROF/.parentlock\" \"\$TGT_PROF/lock\" \"\$TGT_PROF/addonStartup.json.lz4\" 2>/dev/null")
+            appendLine("rm -rf \"\$TGT_PROF/startupCache\" \"\$TGT_PROF/cache2\" \"\$TGT_PROF/shader-cache\" 2>/dev/null")
+            // Poisonous Prefs
+            val spPatterns = "*session* *GeckoSession* *GeckoRuntime* *telemetry* *uuid* *installation* *device_id* *crash*"
+            appendLine("for p in $spPatterns; do find \"\$TD/shared_prefs\" -iname \"\$p.xml\" -delete 2>/dev/null; done")
+            // Session DBs
+            appendLine("find \"\$TD/databases\" -iname '*session*' -o -iname '*recently_closed*' -delete 2>/dev/null")
 
-            appendLine("echo STEP=Patching_Paths")
-            appendLine("find \"\$TD\" -type f \\( -name '*.ini' -o -name '*.js' -o -name '*.json' -o -name '*.xml' \\) | while read f; do sed -i \"s|\$SRC|\$TGT|g\" \"\$f\" 2>/dev/null; done")
-            
-            appendLine("echo STEP=Patching_Databases")
-            appendLine("find \"\$TD/databases\" -type f -name '*.db' | while read db; do sqlite3 \"\$db\" .dump | sed \"s|\$SRC|\$TGT|g\" | sqlite3 \"\$db.tmp\" && mv \"\$db.tmp\" \"\$db\"; done")
+            // 7. Patching
+            appendLine("echo STEP=Patching_references")
+            // Text files
+            appendLine("find \"\$TD\" -type f \\( -name '*.ini' -o -name '*.js' -o -name '*.json' -o -name '*.xml' \\) | while read f; do")
+            appendLine("  sed -i \"s|\$SRC|\$TGT|g\" \"\$f\" 2>/dev/null")
+            appendLine("  [ -n \"\$SRC_APK\" ] && [ -n \"\$TGT_APK\" ] && sed -i \"s|\$SRC_APK|\$TGT_APK|g\" \"\$f\" 2>/dev/null")
+            appendLine("done")
+            // SQLite Databases
+            appendLine("find \"\$TD\" -type f \\( -name '*.sqlite' -o -name '*.db' \\) | while read db; do")
+            appendLine("  sqlite3 \"\$db\" \"PRAGMA wal_checkpoint(TRUNCATE);\" 2>/dev/null")
+            appendLine("  sqlite3 \"\$db\" .dump | sed \"s|\$SRC|\$TGT|g\" | sqlite3 \"\$db.tmp\" && mv \"\$db.tmp\" \"\$db\"")
+            appendLine("done")
 
-            appendLine("echo STEP=Restoring_Security")
+            // 8. Ownership and SELinux
+            appendLine("echo STEP=Fixing_security")
             appendLine("chown -R \"\$TGT_UID:\$TGT_UID\" \"\$TD\"")
             appendLine("restorecon -RF \"\$TD\"")
             
-            appendLine("echo TRANSFER_COMPLETE")
-        }
-    }
-
-    private fun buildChromiumScript(srcPkg: String, dstPkg: String, backup: Boolean): String {
-        return buildString {
-            appendLine("SRC=\"$srcPkg\"; TGT=\"$dstPkg\"")
-            appendLine("TD=\"/data/data/\$TGT\"")
-            appendLine("TGT_UID=\$(stat -c '%u' \"\$TD\" 2>/dev/null || dumpsys package \"\$TGT\" | grep -m1 'userId=' | grep -oE '[0-9]+' | head -1)")
-            appendLine("am force-stop \"\$SRC\"; am force-stop \"\$TGT\"")
-            appendLine("find \"\$TD\" -mindepth 1 -maxdepth 1 ! -name 'lib' -exec rm -rf {} +")
-            appendLine("cp -a \"/data/data/\$SRC/\"* \"\$TD/\"")
-            appendLine("rm -rf \"\$TD/cache\" \"\$TD/code_cache\"")
-            appendLine("find \"\$TD\" -type f | while read f; do sed -i \"s|\$SRC|\$TGT|g\" \"\$f\" 2>/dev/null; done")
-            appendLine("chown -R \"\$TGT_UID:\$TGT_UID\" \"\$TD\"")
-            appendLine("restorecon -RF \"\$TD\"")
             appendLine("echo TRANSFER_COMPLETE")
         }
     }
@@ -144,11 +143,11 @@ class DataMover {
             val t = line.trim()
             if (t.startsWith("STEP=")) postProgress(listener, t.removePrefix("STEP=").replace("_", " "))
             if (t == "TRANSFER_COMPLETE") {
-                postSuccess(listener, "Clone complete!\n\nBookmarks, History and Passwords restored.\n\nTabs reset to prevent crashes.")
+                postSuccess(listener, "Clone success!\n\nFirefox Account and Tabs reset to prevent crashes.\n\nBookmarks and Passwords migrated.")
                 return
             }
         }
-        postError(listener, "Transfer failed or was partial.\n$error")
+        postError(listener, "Migration failed or was partial.\n$error")
     }
 
     private fun postProgress(listener: ProgressListener, msg: String) { mainHandler.post { listener.onProgress(msg) } }

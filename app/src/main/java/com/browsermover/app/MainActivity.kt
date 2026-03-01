@@ -1,6 +1,7 @@
 package com.browsermover.app
 
 import android.os.Bundle
+import android.view.View
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -15,7 +16,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var dataMover: DataMover
     private lateinit var etSourcePackage: TextInputEditText
     private lateinit var etTargetPackage: TextInputEditText
-    private lateinit var btnTransfer: MaterialButton
+    private lateinit var btnManualTransfer: MaterialButton
     private lateinit var cardLog: MaterialCardView
     private lateinit var tvLog: TextView
     private lateinit var tvRootStatus: TextView
@@ -33,28 +34,23 @@ class MainActivity : AppCompatActivity() {
     private fun initViews() {
         etSourcePackage = findViewById(R.id.etSourcePackage)
         etTargetPackage = findViewById(R.id.etTargetPackage)
-        btnTransfer = findViewById(R.id.btnTransfer)
+        btnManualTransfer = findViewById(R.id.btnManualTransfer)
         cardLog = findViewById(R.id.cardLog)
         tvLog = findViewById(R.id.tvLog)
         tvRootStatus = findViewById(R.id.tvRootStatus)
         switchBackup = findViewById(R.id.switchBackup)
 
-        // Hide unused auto-detect views
-        findViewById<MaterialCardView>(R.id.cardCategory).visibility = android.view.View.GONE
-        findViewById<MaterialCardView>(R.id.cardSource).visibility = android.view.View.GONE
-        findViewById<MaterialCardView>(R.id.cardTarget).visibility = android.view.View.GONE
+        // Hide auto-detect UI elements
+        findViewById<MaterialCardView>(R.id.cardCategory).visibility = View.GONE
+        findViewById<MaterialCardView>(R.id.cardSource).visibility = View.GONE
+        findViewById<MaterialCardView>(R.id.cardTarget).visibility = View.GONE
+        findViewById<MaterialButton>(R.id.btnTransfer).visibility = View.GONE
         
-        // Show manual card
-        findViewById<MaterialCardView>(R.id.cardManual).visibility = android.view.View.VISIBLE
-        findViewById<MaterialCardView>(R.id.cardBackup).visibility = android.view.View.VISIBLE
+        // Show only manual UI
+        findViewById<MaterialCardView>(R.id.cardManual).visibility = View.VISIBLE
+        findViewById<MaterialCardView>(R.id.cardBackup).visibility = View.VISIBLE
 
-        btnTransfer.visibility = android.view.View.VISIBLE
-        btnTransfer.text = "Start Transfer"
-        
-        // Pre-fill for testing if needed
-        // etSourcePackage.setText("org.mozilla.firefox")
-        
-        btnTransfer.setOnClickListener { onTransferClicked() }
+        btnManualTransfer.setOnClickListener { onTransferClicked() }
     }
 
     private fun checkRoot() {
@@ -65,7 +61,7 @@ class MainActivity : AppCompatActivity() {
                     tvRootStatus.text = "✅ Root Access Granted"
                 } else {
                     tvRootStatus.text = "❌ Root Required!"
-                    btnTransfer.isEnabled = false
+                    btnManualTransfer.isEnabled = false
                 }
             }
         }.start()
@@ -76,39 +72,37 @@ class MainActivity : AppCompatActivity() {
         val dst = etTargetPackage.text.toString().trim()
 
         if (src.isEmpty() || dst.isEmpty()) {
-            Toast.makeText(this, "Enter both package names", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Please enter both package names", Toast.LENGTH_SHORT).show()
             return
         }
         
         AlertDialog.Builder(this)
-            .setTitle("Confirm Transfer")
-            .setMessage("From: $src\nTo: $dst\n\nThis will wipe data in the target app.")
-            .setPositiveButton("Start") { _, _ -> startTransfer(src, dst) }
+            .setTitle("Confirm Clone")
+            .setMessage("Source: $src\nTarget: $dst\n\nProceed with full data migration?")
+            .setPositiveButton("Yes, Start") { _, _ -> startTransfer(src, dst) }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
     private fun startTransfer(src: String, dst: String) {
-        cardLog.visibility = android.view.View.VISIBLE
-        tvLog.text = "Initializing..."
-        btnTransfer.isEnabled = false
+        cardLog.visibility = View.VISIBLE
+        tvLog.text = "Initializing experts script..."
+        btnManualTransfer.isEnabled = false
 
-        // Manual mode assumes Gecko logic for safety (covers most use cases)
-        // or uses a generic copier. Let's use the robust Gecko script 
-        // as it handles generic files too.
-        val dummyInfo = BrowserInfo("Manual", src, BrowserType.GECKO, true)
+        // Manual mode defaults to GECKO logic as it's the primary target
+        val sourceInfo = BrowserInfo("Manual", src, BrowserType.GECKO, true)
         val targetInfo = BrowserInfo("Manual", dst, BrowserType.GECKO, true)
 
-        dataMover.moveData(dummyInfo, targetInfo, switchBackup.isChecked, object : DataMover.ProgressListener {
+        dataMover.moveData(sourceInfo, targetInfo, switchBackup.isChecked, object : DataMover.ProgressListener {
             override fun onProgress(message: String) { appendLog(message) }
             override fun onSuccess(message: String) {
                 appendLog("✅ DONE!")
-                btnTransfer.isEnabled = true
+                btnManualTransfer.isEnabled = true
                 AlertDialog.Builder(this@MainActivity).setTitle("Success").setMessage(message).setPositiveButton("OK", null).show()
             }
             override fun onError(message: String) {
                 appendLog("❌ ERROR: $message")
-                btnTransfer.isEnabled = true
+                btnManualTransfer.isEnabled = true
             }
         })
     }
