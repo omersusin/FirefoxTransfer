@@ -217,123 +217,74 @@ class DataMover {
             appendLine("")
 
             // ==========================================
-            // Now copy only the GeckoView profile
+            // Now copy ALL profiles to ensure profiles.ini match
             // ==========================================
-            appendLine("echo STEP=Preparing_target_profile")
+            appendLine("echo STEP=Preparing_target_profiles")
+            // Wipe target mozilla dir to ensure clean slate
+            appendLine("rm -rf \"\$DSTDIR/files/mozilla\"")
             appendLine("mkdir -p \"\$DSTDIR/files/mozilla\"")
             appendLine("")
-
-            // We will use the SAME profile directory name as source to ensure profiles.ini works perfectly
-            appendLine("SRC_PROFILE_NAME=\$(basename \$SRC_PROFILE_DIR)")
-            appendLine("DST_PROFILE_DIR=\"\$DSTDIR/files/mozilla/\$SRC_PROFILE_NAME\"")
             
-            // Remove ANY existing profile directories in target to avoid confusion
-            appendLine("rm -rf \"\$DSTDIR\"/files/mozilla/*.default* 2>/dev/null")
-            appendLine("rm -rf \"\$DSTDIR\"/files/mozilla/profiles/* 2>/dev/null")
+            // Copy profiles.ini (Crucial: maps profile names to dirs)
+            appendLine("cp -a \"\$SRCDIR/files/mozilla/profiles.ini\" \"\$DSTDIR/files/mozilla/\" 2>/dev/null")
             
-            appendLine("mkdir -p \"\$DST_PROFILE_DIR\"")
-            appendLine("echo \"DST_PROFILE=\$DST_PROFILE_DIR\"")
-            appendLine("")
-
-            // Also remove session files from source profile before copy
-            appendLine("echo STEP=Copying_profile_data")
-
-            // Copy important files one by one
-            // Removed: compatibility.ini (causes version mismatch errors)
-            // Removed: pkcs11.txt (contains absolute paths)
-            // Removed: addonStartup.json.lz4 (contains absolute paths to extensions)
-            // Removed: signedInUser.json (sync state can cause crashes across different pkgs)
+            // Define files to copy per profile
             val importantFiles = listOf(
                 "places.sqlite", "places.sqlite-wal", "places.sqlite-shm",
                 "cookies.sqlite", "cookies.sqlite-wal", "cookies.sqlite-shm",
-                "logins.json",
-                "key4.db",
-                "cert9.db",
-                "permissions.sqlite",
-                "content-prefs.sqlite",
-                "formhistory.sqlite",
-                "protections.sqlite",
-                "storage.sqlite",
-                "webappsstore.sqlite",
+                "logins.json", "key4.db", "cert9.db", "permissions.sqlite",
+                "content-prefs.sqlite", "formhistory.sqlite", "protections.sqlite",
+                "storage.sqlite", "webappsstore.sqlite",
                 "favicons.sqlite", "favicons.sqlite-wal", "favicons.sqlite-shm",
-                "prefs.js",
-                "search.json.mozlz4",
-                "handlers.json",
-                "xulstore.json",
+                "prefs.js", "search.json.mozlz4", "handlers.json", "xulstore.json",
                 "SiteSecurityServiceState.txt"
             )
 
+            // Loop through all directories in Source mozilla folder
+            appendLine("echo STEP=Copying_profiles")
+            appendLine("find \"\$SRCDIR/files/mozilla\" -mindepth 1 -maxdepth 1 -type d -not -name 'Crash Reports' -not -name 'updates' -not -name 'extensions' | while read SRC_P_PATH; do")
+            appendLine("  P_NAME=\$(basename \"\$SRC_P_PATH\")")
+            appendLine("  DST_P_PATH=\"\$DSTDIR/files/mozilla/\$P_NAME\"")
+            appendLine("  echo \"PROCESSING=\$P_NAME\"")
+            appendLine("  mkdir -p \"\$DST_P_PATH\"")
+            
+            // Copy files
             for (f in importantFiles) {
-                appendLine("cp -a \"\$SRC_PROFILE_DIR/$f\" \"\$DST_PROFILE_DIR/\" 2>/dev/null")
+                appendLine("  cp -a \"\$SRC_P_PATH/$f\" \"\$DST_P_PATH/\" 2>/dev/null")
             }
-            appendLine("")
-
-            // FIX ABSOLUTE PATHS in prefs.js (CRITICAL for forks/different package names)
-            appendLine("if [ -f \"\$DST_PROFILE_DIR/prefs.js\" ]; then")
-            appendLine("  sed -i \"s|\$SRCDIR|\$DSTDIR|g\" \"\$DST_PROFILE_DIR/prefs.js\"")
-            appendLine("  echo \"PREFS_FIXED=DONE\"")
-            appendLine("fi")
-            appendLine("")
-
-            // Copy extensions
-            appendLine("if [ -d \"\$SRC_PROFILE_DIR/extensions\" ]; then")
-            appendLine("  cp -a \"\$SRC_PROFILE_DIR/extensions\" \"\$DST_PROFILE_DIR/\"")
-            appendLine("  echo EXTENSIONS=COPIED")
-            appendLine("fi")
-            appendLine("")
-
-            appendLine("if [ -d \"\$SRC_PROFILE_DIR/browser-extension-data\" ]; then")
-            appendLine("  cp -a \"\$SRC_PROFILE_DIR/browser-extension-data\" \"\$DST_PROFILE_DIR/\"")
-            appendLine("  echo EXT_DATA=COPIED")
-            appendLine("fi")
-            appendLine("")
-
-            appendLine("if [ -d \"\$SRC_PROFILE_DIR/storage\" ]; then")
-            appendLine("  cp -a \"\$SRC_PROFILE_DIR/storage\" \"\$DST_PROFILE_DIR/\"")
-            appendLine("  echo STORAGE=COPIED")
-            appendLine("fi")
-            appendLine("")
-
-            // Copy profiles.ini
-            appendLine("cp -a \"\$SRCDIR/files/mozilla/profiles.ini\" \"\$DSTDIR/files/mozilla/\" 2>/dev/null")
-            appendLine("cp -a \"\$SRCDIR/files/mozilla/installs.ini\" \"\$DSTDIR/files/mozilla/\" 2>/dev/null")
-            appendLine("")
-
-            // Fix installs.ini (remove it as it is package-specific)
-            appendLine("rm -f \"\$DSTDIR/files/mozilla/installs.ini\" 2>/dev/null")
-            appendLine("")
-
-            // DO NOT COPY session files from source profile either
-            appendLine("rm -f \"\$DST_PROFILE_DIR/sessionstore.jsonlz4\" 2>/dev/null")
-            appendLine("rm -rf \"\$DST_PROFILE_DIR/sessionstore-backups\" 2>/dev/null")
-            appendLine("rm -f \"\$DST_PROFILE_DIR/lock\" 2>/dev/null")
-            appendLine("rm -f \"\$DST_PROFILE_DIR/.parentlock\" 2>/dev/null")
-            appendLine("echo SESSION_SKIP=Done")
+            
+            // Copy directories
+            appendLine("  cp -a \"\$SRC_P_PATH/extensions\" \"\$DST_P_PATH/\" 2>/dev/null")
+            appendLine("  cp -a \"\$SRC_P_PATH/browser-extension-data\" \"\$DST_P_PATH/\" 2>/dev/null")
+            appendLine("  cp -a \"\$SRC_P_PATH/storage\" \"\$DST_P_PATH/\" 2>/dev/null")
+            
+            // Cleanup dangerous files
+            appendLine("  rm -f \"\$DST_P_PATH/sessionstore.jsonlz4\"")
+            appendLine("  rm -rf \"\$DST_P_PATH/sessionstore-backups\"")
+            appendLine("  rm -f \"\$DST_P_PATH/compatibility.ini\"")
+            appendLine("  rm -f \"\$DST_P_PATH/pkcs11.txt\"")
+            appendLine("  rm -f \"\$DST_P_PATH/addonStartup.json.lz4\"")
+            appendLine("  rm -f \"\$DST_P_PATH/signedInUser.json\"")
+            appendLine("  rm -f \"\$DST_P_PATH/lock\"")
+            appendLine("  rm -f \"\$DST_P_PATH/.parentlock\"")
+            
+            // Patch prefs.js
+            appendLine("  if [ -f \"\$DST_P_PATH/prefs.js\" ]; then")
+            appendLine("    sed -i \"s|\$SRCDIR|\$DSTDIR|g\" \"\$DST_P_PATH/prefs.js\"")
+            appendLine("    echo \"PREFS_FIXED=DONE\"")
+            appendLine("  fi")
+            appendLine("done")
             appendLine("")
 
             // Verify
             appendLine("echo STEP=Verifying")
-            appendLine("echo \"DST_HAS_PLACES=\$(test -f \$DST_PROFILE_DIR/places.sqlite && echo YES || echo NO)\"")
-            appendLine("echo \"DST_HAS_LOGINS=\$(test -f \$DST_PROFILE_DIR/logins.json && echo YES || echo NO)\"")
-            appendLine("echo \"DST_HAS_COOKIES=\$(test -f \$DST_PROFILE_DIR/cookies.sqlite && echo YES || echo NO)\"")
-            appendLine("echo \"DST_HAS_KEYS=\$(test -f \$DST_PROFILE_DIR/key4.db && echo YES || echo NO)\"")
-            appendLine("echo \"DST_PROFILE_FILES=\$(ls \$DST_PROFILE_DIR/ 2>/dev/null)\"")
+            appendLine("echo \"DST_MOZ_CONTENT=\$(ls \"\$DSTDIR/files/mozilla/\" 2>/dev/null)\"")
             appendLine("")
-
-            // Double check no session files remain ANYWHERE in target
+            
+            // Final session cleanup in root
             appendLine("echo STEP=Final_session_cleanup")
-            appendLine("find \"\$DSTDIR\" -name '*session*' -not -path '*/mozilla/*prefs*' 2>/dev/null | while read f; do")
-            appendLine("  echo \"REMOVING_SESSION=\$f\"")
-            appendLine("  rm -rf \"\$f\"")
-            appendLine("done")
-            appendLine("find \"\$DSTDIR\" -name '.browser_state' 2>/dev/null | while read f; do")
-            appendLine("  echo \"REMOVING_STATE=\$f\"")
-            appendLine("  rm -rf \"\$f\"")
-            appendLine("done")
-            appendLine("find \"\$DSTDIR\" -name '*_state*' -not -path '*/mozilla/*' 2>/dev/null | while read f; do")
-            appendLine("  echo \"REMOVING_STATE2=\$f\"")
-            appendLine("  rm -rf \"\$f\"")
-            appendLine("done")
+            appendLine("rm -rf \"\$DSTDIR/files/.browser_state\" 2>/dev/null")
+            appendLine("rm -f \"\$DSTDIR/files/session.json\" 2>/dev/null")
             appendLine("echo FINAL_CLEAN=DONE")
             appendLine("")
 
@@ -351,16 +302,7 @@ class DataMover {
             appendLine("echo STEP=SELinux")
             appendLine("restorecon -RF \"\$DSTDIR\" 2>/dev/null")
             appendLine("")
-
-            // Final verification - make sure no state files exist
-            appendLine("echo STEP=Final_check")
-            appendLine("echo \"CHECK_BROWSER_STATE=\$(test -d \$DSTDIR/files/.browser_state && echo EXISTS || echo GONE)\"")
-            appendLine("echo \"CHECK_SESSION_JSON=\$(test -f \$DSTDIR/files/session.json && echo EXISTS || echo GONE)\"")
-            appendLine("echo \"CHECK_SHARED_PREFS=\$(test -d \$DSTDIR/shared_prefs && echo EXISTS || echo GONE)\"")
-            appendLine("echo \"DST_TOP_FILES=\$(ls \$DSTDIR/ 2>/dev/null)\"")
-            appendLine("echo \"DST_FILES_DIR=\$(ls \$DSTDIR/files/ 2>/dev/null)\"")
-            appendLine("")
-
+            
             appendLine("echo TRANSFER_COMPLETE")
         }
     }
