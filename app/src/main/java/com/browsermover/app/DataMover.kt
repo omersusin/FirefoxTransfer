@@ -17,6 +17,43 @@ class DataMover {
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    private fun findDataDir(packageName: String): String? {
+        // Method 1: dumpsys package -> dataDir
+        val dump = RootHelper.executeCommand(
+            "dumpsys package $packageName | grep 'dataDir=' | head -1"
+        )
+        if (dump.success && dump.output.contains("dataDir=")) {
+            val path = dump.output.substringAfter("dataDir=").trim()
+            if (path.isNotBlank()) {
+                val check = RootHelper.executeCommand("test -d '$path' && echo YES || echo NO")
+                if (check.output.contains("YES")) return path
+            }
+        }
+
+        // Method 2: Try common paths
+        val paths = listOf(
+            "/data/user/0/$packageName",
+            "/data/data/$packageName",
+            "/data/user_de/0/$packageName",
+            "/mnt/expand/*/user/0/$packageName"
+        )
+
+        for (path in paths) {
+            val check = RootHelper.executeCommand("test -d '$path' && echo YES || echo NO")
+            if (check.output.contains("YES")) return path
+        }
+
+        // Method 3: Find with wildcard
+        val findResult = RootHelper.executeCommand(
+            "find /data -maxdepth 4 -type d -name '$packageName' 2>/dev/null | head -1"
+        )
+        if (findResult.success && findResult.output.isNotBlank()) {
+            return findResult.output.trim()
+        }
+
+        return null
+    }
+
     fun moveData(
         source: BrowserInfo,
         target: BrowserInfo,
@@ -32,29 +69,43 @@ class DataMover {
                 }
                 postProgress(listener, "Root access confirmed.")
 
-                val srcDir = "/data/data/${source.packageName}"
-                val dstDir = "/data/data/${target.packageName}"
-
-                // Check source exists
-                postProgress(listener, "Checking source: ${source.packageName}")
-                val srcCheck = RootHelper.executeCommand("ls $srcDir/")
-                postProgress(listener, "Source check output: '${srcCheck.output.take(200)}'")
-                postProgress(listener, "Source check error: '${srcCheck.error.take(200)}'")
-                postProgress(listener, "Source check success: ${srcCheck.success}")
-
-                if (srcCheck.output.isBlank() && !srcCheck.success) {
-                    postError(listener, "Source browser data not found!\n\nPackage: ${source.packageName}\nError: ${srcCheck.error}")
+                // Verify packages exist
+                postProgress(listener, "Verifying packages...")
+                val srcPmCheck = RootHelper.executeCommand("pm path ${source.packageName}")
+                postProgress(listener, "Source pm path: ${srcPmCheck.output.take(200)}")
+                if (!srcPmCheck.success || srcPmCheck.output.isBlank()) {
+                    postError(listener, "Source package not installed: ${source.packageName}")
                     return@Thread
                 }
 
-                // Check target exists
-                postProgress(listener, "Checking target: ${target.packageName}")
-                val dstCheck = RootHelper.executeCommand("ls $dstDir/")
-                if (dstCheck.output.isBlank() && !dstCheck.success) {
-                    postError(listener, "Target browser not installed!\n\nPackage: ${target.packageName}\nError: ${dstCheck.error}")
+                val dstPmCheck = RootHelper.executeCommand("pm path ${target.packageName}")
+                postProgress(listener, "Target pm path: ${dstPmCheck.output.take(200)}")
+                if (!dstPmCheck.success || dstPmCheck.output.isBlank()) {
+                    postError(listener, "Target package not installed: ${target.packageName}")
                     return@Thread
                 }
-                postProgress(listener, "Target confirmed.")
+
+                // Find actual data directories
+                postProgress(listener, "Finding source data directory...")
+                val srcDir = findDataDir(source.packageName)
+                postProgress(listener, "Source data dir: $srcDir")
+                if (srcDir == null) {
+                    postError(listener, "Could not find source data directory!\nPackage: ${source.packageName}")
+                    return@Thread
+                }
+
+                postProgress(listener, "Finding target data directory...")
+                val dstDir = findDataDir(target.packageName)
+                postProgress(listener, "Target data dir: $dstDir")
+                if (dstDir == null) {
+                    postError(listener, "Could not find target data directory!\nPackage: ${target.packageName}")
+                    return@Thread
+                }
+
+                // List source contents for debug
+                postProgress(listener, "Source contents:")
+                val lsSrc = RootHelper.executeCommand("ls -la '$srcDir/' | head -20")
+                postProgress(listener, lsSrc.output.take(500))
 
                 // Force stop both
                 postProgress(listener, "Stopping browsers...")
@@ -70,32 +121,32 @@ class DataMover {
                     val ts = System.currentTimeMillis()
                     val backupFile = "$BACKUP_DIR/${target.packageName}_$ts.tar.gz"
                     val bkResult = RootHelper.executeCommand(
-                        "tar -czf $backupFile -C $dstDir . 2>&1"
+                        "tar -czf '$backupFile' -C '$dstDir' . 2>&1"
                     )
                     if (bkResult.success) {
                         postProgress(listener, "Backup saved: $backupFile")
                     } else {
-                        postProgress(listener, "Warning: Backup failed, continuing... ${bkResult.error}")
+                        postProgress(listener, "Warning: Backup failed - ${bkResult.error.take(200)}")
                     }
                 }
 
                 // Clear target
                 postProgress(listener, "Clearing target data...")
-                RootHelper.executeCommand("rm -rf $dstDir/*")
+                RootHelper.executeCommand("rm -rf '$dstDir'/*")
                 postProgress(listener, "Target cleared.")
 
                 // Copy data
                 postProgress(listener, "Copying data... (this may take a while)")
-                val cpResult = RootHelper.executeCommand("cp -a $srcDir/* $dstDir/")
-                postProgress(listener, "Copy result - success: ${cpResult.success}")
+                val cpResult = RootHelper.executeCommand("cp -a '$srcDir'/* '$dstDir'/ 2>&1")
+                postProgress(listener, "Copy done. Success: ${cpResult.success}")
                 if (cpResult.error.isNotBlank()) {
-                    postProgress(listener, "Copy warnings: ${cpResult.error.take(300)}")
+                    postProgress(listener, "Copy notes: ${cpResult.error.take(300)}")
                 }
 
-                // Fix ownership - get UID from package manager
+                // Fix ownership
                 postProgress(listener, "Fixing ownership...")
                 val uidResult = RootHelper.executeCommand(
-                    "dumpsys package ${target.packageName} | grep userId= | head -1"
+                    "dumpsys package ${target.packageName} | grep 'userId=' | head -1"
                 )
                 postProgress(listener, "UID lookup: ${uidResult.output.take(200)}")
 
@@ -103,37 +154,35 @@ class DataMover {
                 if (uidMatch != null) {
                     val uid = uidMatch.groupValues[1].toInt()
                     val userName = "u0_a${uid - 10000}"
-                    RootHelper.executeCommand("chown -R $userName:$userName $dstDir")
+                    RootHelper.executeCommand("chown -R $userName:$userName '$dstDir'")
                     postProgress(listener, "Ownership set to: $userName (uid=$uid)")
                 } else {
-                    // Fallback: use stat on target parent
-                    postProgress(listener, "UID not found via dumpsys, trying stat...")
-                    val statResult = RootHelper.executeCommand(
-                        "stat -c '%u:%g' $dstDir"
-                    )
-                    val statOwner = statResult.output.trim().replace("'", "")
-                    if (statOwner.isNotBlank() && statOwner != "0:0") {
-                        RootHelper.executeCommand("chown -R $statOwner $dstDir")
-                        postProgress(listener, "Ownership set via stat: $statOwner")
+                    // Fallback: get owner from target dir parent info
+                    postProgress(listener, "Trying alternative ownership method...")
+                    val statR = RootHelper.executeCommand("stat -c '%u:%g' '$dstDir' 2>/dev/null")
+                    val ow = statR.output.trim().replace("'", "")
+                    if (ow.isNotBlank() && !ow.startsWith("0")) {
+                        RootHelper.executeCommand("chown -R $ow '$dstDir'")
+                        postProgress(listener, "Ownership set via stat: $ow")
                     } else {
-                        postProgress(listener, "Warning: Could not determine ownership automatically.")
+                        postProgress(listener, "Warning: Could not fix ownership automatically")
                     }
                 }
 
                 // Fix SELinux
                 postProgress(listener, "Fixing SELinux context...")
-                RootHelper.executeCommand("restorecon -RF $dstDir")
+                RootHelper.executeCommand("restorecon -RF '$dstDir' 2>/dev/null")
 
                 // Verify
                 postProgress(listener, "Verifying transfer...")
-                val verifyResult = RootHelper.executeCommand("ls $dstDir/ | head -15")
-                postProgress(listener, "Target contents:\n${verifyResult.output}")
+                val verifyResult = RootHelper.executeCommand("ls '$dstDir/' | head -15")
+                postProgress(listener, "Target contents after transfer:\n${verifyResult.output}")
 
                 postSuccess(
                     listener,
                     "Transfer successful!\n\n" +
-                    "Source: ${source.name}\n(${source.packageName})\n\n" +
-                    "Target: ${target.name}\n(${target.packageName})\n\n" +
+                    "Source: ${source.name}\n($srcDir)\n\n" +
+                    "Target: ${target.name}\n($dstDir)\n\n" +
                     "You can now open ${target.name}."
                 )
 
