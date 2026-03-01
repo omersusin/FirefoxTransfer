@@ -126,16 +126,23 @@ class MainActivity : AppCompatActivity() {
         cardTarget.visibility = View.GONE
         btnTransfer.visibility = View.GONE
         cardLog.visibility = View.GONE
+        cardManual.visibility = View.GONE
 
         tvSourceTitle.text = if (type == BrowserType.FIREFOX)
             "🦊 Firefox Family" else "🌐 Chromium Family"
+
+        // Clear existing adapters to avoid showing old data
+        rvSourceBrowsers.adapter = null
+        rvTargetBrowsers.adapter = null
 
         Thread {
             val browsers = detector.detectInstalledBrowsers(type)
             runOnUiThread {
                 installedBrowsers = browsers
                 if (browsers.isEmpty()) {
-                    Toast.makeText(this, "No installed ${type.label} browsers found.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "No installed ${type.label} browsers found. Check manual entry.", Toast.LENGTH_LONG).show()
+                    cardManual.visibility = View.VISIBLE
+                    tvTargetDescription.text = "Manual Entry Required"
                 } else {
                     rvSourceBrowsers.adapter = BrowserAdapter(browsers) { browser ->
                         onSourceSelected(browser)
@@ -157,6 +164,9 @@ class MainActivity : AppCompatActivity() {
         cardManual.visibility = View.GONE
         btnTransfer.visibility = View.GONE
         cardLog.visibility = View.GONE
+        
+        etSourcePackage.setText("")
+        etTargetPackage.setText("")
     }
 
     private fun onSourceSelected(source: BrowserInfo) {
@@ -164,6 +174,7 @@ class MainActivity : AppCompatActivity() {
         selectedTarget = null
 
         etSourcePackage.setText(source.packageName)
+        etTargetPackage.setText("") // Clear target field when source changes
 
         val targets = detector.getCompatibleTargets(source, installedBrowsers)
 
@@ -171,13 +182,15 @@ class MainActivity : AppCompatActivity() {
         tvTargetDescription.text = getString(R.string.step_target)
 
         if (targets.isEmpty()) {
-            Toast.makeText(this, "No compatible target found. Use manual entry.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "No other compatible browsers found. Use manual entry.", Toast.LENGTH_SHORT).show()
             rvTargetBrowsers.adapter = null
             btnTransfer.visibility = View.GONE
+            cardManual.visibility = View.VISIBLE
         } else {
             rvTargetBrowsers.adapter = BrowserAdapter(targets) { browser ->
                 onTargetSelected(browser)
             }
+            cardManual.visibility = View.GONE // Hide manual if we have choices
         }
     }
 

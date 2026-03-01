@@ -56,40 +56,52 @@ class BrowserDetector(private val context: Context) {
     fun detectInstalledBrowsers(filterType: BrowserType? = null): List<BrowserInfo> {
         val installed = mutableListOf<BrowserInfo>()
 
-        val list = if (filterType != null) {
-            knownBrowsers.filter { it.type == filterType }
-        } else {
-            knownBrowsers
-        }
-
-        for (b in list) {
+        // 1. Check known browsers first
+        for (b in knownBrowsers) {
             if (isPackageInstalled(b.packageName)) {
-                installed.add(b.copy(isInstalled = true))
+                if (filterType == null || b.type == filterType) {
+                    installed.add(b.copy(isInstalled = true))
+                }
             }
         }
 
-        // Auto-detect unknown browsers via intent query
+        // 2. Auto-detect other browsers via intent query
         try {
             val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
             intent.data = android.net.Uri.parse("https://example.com")
             val resolveList = context.packageManager.queryIntentActivities(intent, 0)
-            val knownPkgs = knownBrowsers.map { it.packageName }.toSet()
+            val alreadyDetected = installed.map { it.packageName }.toSet()
 
             for (info in resolveList) {
                 val pkg = info.activityInfo.packageName
-                if (pkg in knownPkgs) continue
-                if (installed.any { it.packageName == pkg }) continue
+                if (pkg in alreadyDetected) continue
 
                 val appName = try {
                     val ai = context.packageManager.getApplicationInfo(pkg, 0)
                     context.packageManager.getApplicationLabel(ai).toString()
                 } catch (e: Exception) { pkg }
 
-                // Default to UNKNOWN type, user can still try manual
-                val type = BrowserType.UNKNOWN
-                if (filterType != null && type != filterType) continue
+                // Guess type from package name or app name
+                val guessedType = when {
+                    pkg.contains("firefox", true) || pkg.contains("mozilla", true) || 
+                    pkg.contains("fennec", true) || pkg.contains("fenix", true) ||
+                    pkg.contains("focus", true) || pkg.contains("klar", true) ||
+                    pkg.contains("icecat", true) || pkg.contains("iceraven", true) ||
+                    pkg.contains("waterfox", true) || pkg.contains("mull", true) ||
+                    appName.contains("Firefox", true) -> BrowserType.FIREFOX
+                    
+                    pkg.contains("chrome", true) || pkg.contains("chromium", true) || 
+                    pkg.contains("brave", true) || pkg.contains("opera", true) ||
+                    pkg.contains("vivaldi", true) || pkg.contains("edge", true) ||
+                    pkg.contains("samsung", true) || pkg.contains("kiwi", true) ||
+                    appName.contains("Chrome", true) || appName.contains("Browser", true) -> BrowserType.CHROMIUM
+                    
+                    else -> BrowserType.UNKNOWN
+                }
 
-                installed.add(BrowserInfo("$appName (Detected)", pkg, type, true))
+                if (filterType != null && guessedType != filterType && guessedType != BrowserType.UNKNOWN) continue
+
+                installed.add(BrowserInfo("$appName (Detected)", pkg, guessedType, true))
             }
         } catch (e: Exception) {
             // Ignore
