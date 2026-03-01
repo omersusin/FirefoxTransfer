@@ -217,62 +217,39 @@ class DataMover {
             appendLine("")
 
             // ==========================================
-            // Now copy ALL profiles to ensure profiles.ini match
+            // Now copy profiles, shared_prefs and databases for FULL CLONE
             // ==========================================
-            appendLine("echo STEP=Preparing_target_profiles")
-            // Wipe target mozilla dir to ensure clean slate
-            appendLine("rm -rf \"\$DSTDIR/files/mozilla\"")
+            appendLine("echo STEP=Cloning_data")
+            
+            // 1. Profiles
             appendLine("mkdir -p \"\$DSTDIR/files/mozilla\"")
-            appendLine("")
-            
-            // Copy profiles.ini (Crucial: maps profile names to dirs)
             appendLine("cp -a \"\$SRCDIR/files/mozilla/profiles.ini\" \"\$DSTDIR/files/mozilla/\" 2>/dev/null")
+            appendLine("cp -a \"\$SRCDIR/files/mozilla/signedInUser.json\" \"\$DSTDIR/files/mozilla/\" 2>/dev/null")
             
-            // Define files to copy per profile
-            val importantFiles = listOf(
-                "places.sqlite", "places.sqlite-wal", "places.sqlite-shm",
-                "cookies.sqlite", "cookies.sqlite-wal", "cookies.sqlite-shm",
-                "logins.json", "key4.db", "cert9.db", "permissions.sqlite",
-                "content-prefs.sqlite", "formhistory.sqlite", "protections.sqlite",
-                "storage.sqlite", "webappsstore.sqlite",
-                "favicons.sqlite", "favicons.sqlite-wal", "favicons.sqlite-shm",
-                "prefs.js", "search.json.mozlz4", "handlers.json", "xulstore.json",
-                "SiteSecurityServiceState.txt"
-            )
-
-            // Loop through all directories in Source mozilla folder
-            appendLine("echo STEP=Copying_profiles")
             appendLine("find \"\$SRCDIR/files/mozilla\" -mindepth 1 -maxdepth 1 -type d -not -name 'Crash Reports' -not -name 'updates' -not -name 'extensions' | while read SRC_P_PATH; do")
             appendLine("  P_NAME=\$(basename \"\$SRC_P_PATH\")")
             appendLine("  DST_P_PATH=\"\$DSTDIR/files/mozilla/\$P_NAME\"")
-            appendLine("  echo \"PROCESSING=\$P_NAME\"")
-            appendLine("  mkdir -p \"\$DST_P_PATH\"")
-            
-            // Copy files
-            for (f in importantFiles) {
-                appendLine("  cp -a \"\$SRC_P_PATH/$f\" \"\$DST_P_PATH/\" 2>/dev/null")
-            }
-            
-            // Copy directories
-            appendLine("  cp -a \"\$SRC_P_PATH/extensions\" \"\$DST_P_PATH/\" 2>/dev/null")
-            appendLine("  cp -a \"\$SRC_P_PATH/browser-extension-data\" \"\$DST_P_PATH/\" 2>/dev/null")
-            appendLine("  cp -a \"\$SRC_P_PATH/storage\" \"\$DST_P_PATH/\" 2>/dev/null")
-            
-            // Cleanup and Patch
-            appendLine("  rm -f \"\$DST_P_PATH/compatibility.ini\"")
-            appendLine("  rm -f \"\$DST_P_PATH/lock\"")
-            appendLine("  rm -f \"\$DST_P_PATH/.parentlock\"")
+            appendLine("  echo \"CLONING_PROFILE=\$P_NAME\"")
+            appendLine("  cp -a \"\$SRC_P_PATH\" \"\$DSTDIR/files/mozilla/\"")
             
             // Patch prefs.js
             appendLine("  if [ -f \"\$DST_P_PATH/prefs.js\" ]; then")
             appendLine("    sed -i \"s|\$SRCDIR|\$DSTDIR|g\" \"\$DST_P_PATH/prefs.js\"")
-            appendLine("    echo \"PREFS_FIXED=DONE\"")
             appendLine("  fi")
             appendLine("done")
-            appendLine("")
 
-            // Copy signedInUser.json if exists (Account Info)
-            appendLine("cp -a \"\$SRCDIR/files/mozilla/signedInUser.json\" \"\$DSTDIR/files/mozilla/\" 2>/dev/null")
+            // 2. Shared Prefs (Contains account and many settings)
+            appendLine("echo STEP=Cloning_settings")
+            appendLine("cp -a \"\$SRCDIR/shared_prefs\" \"\$DSTDIR/\" 2>/dev/null")
+            // Patch paths in XML files
+            appendLine("find \"\$DSTDIR/shared_prefs\" -name '*.xml' -exec sed -i \"s|\$SRCDIR|\$DSTDIR|g\" {} + 2>/dev/null")
+
+            // 3. Databases (Contains account sync state, tabs, etc)
+            appendLine("echo STEP=Cloning_databases")
+            appendLine("cp -a \"\$SRCDIR/databases\" \"\$DSTDIR/\" 2>/dev/null")
+            
+            appendLine("")
+            appendLine("echo CLONE=DONE")
             appendLine("")
 
             // Verify

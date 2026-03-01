@@ -99,7 +99,11 @@ class BrowserDetector(private val context: Context) {
                     else -> BrowserType.UNKNOWN
                 }
 
-                if (filterType != null && guessedType != filterType && guessedType != BrowserType.UNKNOWN) continue
+                // If filtering by Firefox, show Firefox-guessed OR Unknown (could be a fork)
+                // If filtering by Chromium, show Chromium-guessed OR Unknown
+                if (filterType != null) {
+                    if (guessedType != filterType && guessedType != BrowserType.UNKNOWN) continue
+                }
 
                 installed.add(BrowserInfo("$appName (Detected)", pkg, guessedType, true))
             }
