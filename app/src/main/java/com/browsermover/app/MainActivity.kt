@@ -126,7 +126,6 @@ class MainActivity : AppCompatActivity() {
         cardTarget.visibility = View.GONE
         btnTransfer.visibility = View.GONE
         cardLog.visibility = View.GONE
-        cardManual.visibility = View.GONE
 
         tvSourceTitle.text = if (type == BrowserType.FIREFOX)
             "🦊 Firefox Family" else "🌐 Chromium Family"
@@ -140,9 +139,7 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 installedBrowsers = browsers
                 if (browsers.isEmpty()) {
-                    Toast.makeText(this, "No installed ${type.label} browsers found. Check manual entry.", Toast.LENGTH_LONG).show()
-                    cardManual.visibility = View.VISIBLE
-                    tvTargetDescription.text = "Manual Entry Required"
+                    Toast.makeText(this, "No installed ${type.label} browsers found. Check manual entry below.", Toast.LENGTH_LONG).show()
                 } else {
                     rvSourceBrowsers.adapter = BrowserAdapter(browsers) { browser ->
                         onSourceSelected(browser)
@@ -164,9 +161,6 @@ class MainActivity : AppCompatActivity() {
         cardManual.visibility = View.GONE
         btnTransfer.visibility = View.GONE
         cardLog.visibility = View.GONE
-        
-        etSourcePackage.setText("")
-        etTargetPackage.setText("")
     }
 
     private fun onSourceSelected(source: BrowserInfo) {
@@ -174,7 +168,6 @@ class MainActivity : AppCompatActivity() {
         selectedTarget = null
 
         etSourcePackage.setText(source.packageName)
-        etTargetPackage.setText("") // Clear target field when source changes
 
         val targets = detector.getCompatibleTargets(source, installedBrowsers)
 
@@ -182,15 +175,13 @@ class MainActivity : AppCompatActivity() {
         tvTargetDescription.text = getString(R.string.step_target)
 
         if (targets.isEmpty()) {
-            Toast.makeText(this, "No other compatible browsers found. Use manual entry.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "No compatible target found. Use manual entry.", Toast.LENGTH_SHORT).show()
             rvTargetBrowsers.adapter = null
             btnTransfer.visibility = View.GONE
-            cardManual.visibility = View.VISIBLE
         } else {
             rvTargetBrowsers.adapter = BrowserAdapter(targets) { browser ->
                 onTargetSelected(browser)
             }
-            cardManual.visibility = View.GONE // Hide manual if we have choices
         }
     }
 
@@ -245,16 +236,23 @@ class MainActivity : AppCompatActivity() {
         btnTransfer.isEnabled = false
         btnManualTransfer.isEnabled = false
 
+        // Determine type: if browser info says UNKNOWN, use the category selected by user
+        val finalType = if (selectedSource?.type != null && selectedSource?.type != BrowserType.UNKNOWN) {
+            selectedSource?.type!!
+        } else {
+            selectedType ?: BrowserType.UNKNOWN
+        }
+
         val source = BrowserInfo(
             name = selectedSource?.name ?: srcPkg,
             packageName = srcPkg,
-            type = selectedType ?: BrowserType.UNKNOWN,
+            type = finalType,
             isInstalled = true
         )
         val target = BrowserInfo(
             name = selectedTarget?.name ?: dstPkg,
             packageName = dstPkg,
-            type = selectedType ?: BrowserType.UNKNOWN,
+            type = finalType,
             isInstalled = true
         )
 
@@ -262,7 +260,7 @@ class MainActivity : AppCompatActivity() {
             override fun onProgress(message: String) {
                 appendLog("⏳ $message")
             }
-
+    ...
             override fun onSuccess(message: String) {
                 appendLog("✅ $message")
                 btnTransfer.isEnabled = true

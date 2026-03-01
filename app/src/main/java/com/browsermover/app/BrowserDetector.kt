@@ -56,52 +56,41 @@ class BrowserDetector(private val context: Context) {
     fun detectInstalledBrowsers(filterType: BrowserType? = null): List<BrowserInfo> {
         val installed = mutableListOf<BrowserInfo>()
 
-        // 1. Check known browsers first
-        for (b in knownBrowsers) {
+        val list = if (filterType != null) {
+            knownBrowsers.filter { it.type == filterType }
+        } else {
+            knownBrowsers
+        }
+
+        for (b in list) {
             if (isPackageInstalled(b.packageName)) {
-                if (filterType == null || b.type == filterType) {
-                    installed.add(b.copy(isInstalled = true))
-                }
+                installed.add(b.copy(isInstalled = true))
             }
         }
 
-        // 2. Auto-detect other browsers via intent query
+        // Auto-detect unknown browsers via intent query
         try {
             val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
             intent.data = android.net.Uri.parse("https://example.com")
             val resolveList = context.packageManager.queryIntentActivities(intent, 0)
-            val alreadyDetected = installed.map { it.packageName }.toSet()
+            val knownPkgs = knownBrowsers.map { it.packageName }.toSet()
 
             for (info in resolveList) {
                 val pkg = info.activityInfo.packageName
-                if (pkg in alreadyDetected) continue
+                if (pkg in knownPkgs) continue
+                if (installed.any { it.packageName == pkg }) continue
 
                 val appName = try {
                     val ai = context.packageManager.getApplicationInfo(pkg, 0)
                     context.packageManager.getApplicationLabel(ai).toString()
                 } catch (e: Exception) { pkg }
 
-                // Guess type from package name or app name
-                val guessedType = when {
-                    pkg.contains("firefox", true) || pkg.contains("mozilla", true) || 
-                    pkg.contains("fennec", true) || pkg.contains("fenix", true) ||
-                    pkg.contains("focus", true) || pkg.contains("klar", true) ||
-                    pkg.contains("icecat", true) || pkg.contains("iceraven", true) ||
-                    pkg.contains("waterfox", true) || pkg.contains("mull", true) ||
-                    appName.contains("Firefox", true) -> BrowserType.FIREFOX
-                    
-                    pkg.contains("chrome", true) || pkg.contains("chromium", true) || 
-                    pkg.contains("brave", true) || pkg.contains("opera", true) ||
-                    pkg.contains("vivaldi", true) || pkg.contains("edge", true) ||
-                    pkg.contains("samsung", true) || pkg.contains("kiwi", true) ||
-                    appName.contains("Chrome", true) || appName.contains("Browser", true) -> BrowserType.CHROMIUM
-                    
-                    else -> BrowserType.UNKNOWN
-                }
+                // Default to UNKNOWN type, user can still try manual
+                val type = BrowserType.UNKNOWN
+                // Removed the filter check for UNKNOWN so they always show up
+                // if (filterType != null && type != filterType) continue
 
-                if (filterType != null && guessedType != filterType && guessedType != BrowserType.UNKNOWN) continue
-
-                installed.add(BrowserInfo("$appName (Detected)", pkg, guessedType, true))
+                installed.add(BrowserInfo("$appName (Detected)", pkg, type, true))
             }
         } catch (e: Exception) {
             // Ignore
@@ -112,7 +101,7 @@ class BrowserDetector(private val context: Context) {
 
     fun getCompatibleTargets(source: BrowserInfo, allBrowsers: List<BrowserInfo>): List<BrowserInfo> {
         return allBrowsers.filter {
-            it.packageName != source.packageName && it.type == source.type
+            it.packageName != source.packageName && (it.type == source.type || it.type == BrowserType.UNKNOWN || source.type == BrowserType.UNKNOWN)
         }
     }
 
