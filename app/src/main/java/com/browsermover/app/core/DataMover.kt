@@ -174,8 +174,9 @@ class DataMover(private val context: Context) {
                 val target = "$SCRIPTS_DIR/$name"
                 val content = try { context.assets.open(path).bufferedReader().readText() } catch (e: Exception) { return@withContext false }
                 val tmp = File(context.cacheDir, "s_$name").apply { writeText(content) }
-                RootHelper.execMultiple(listOf("cp -f '${temp.absolutePath}' '$target'", "chmod 755 '$target'", "sed -i 's/\\r$//' '$target'"))
+                val result = RootHelper.execMultiple(listOf("cp -f '${tmp.absolutePath}' '$target'", "chmod 755 '$target'", "sed -i 's/\\r$//' '$target'"))
                 tmp.delete()
+                if (!result.success) return@withContext false
             }
             true
         } catch (_: Exception) { false }
@@ -184,18 +185,17 @@ class DataMover(private val context: Context) {
     private suspend fun extractSqlite3Binary() = withContext(Dispatchers.IO) {
         try {
             val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
-            val input = context.assets.open("bin/$abi/sqlite3")
+            val input = try { context.assets.open("bin/$abi/sqlite3") } catch (e: Exception) { return@withContext }
             val tmp = File(context.cacheDir, "sqlite3")
             tmp.outputStream().use { input.copyTo(it) }
-            RootHelper.execMultiple(listOf("cp -f '${temp.absolutePath}' '$WORK_DIR/sqlite3'", "chmod 755 '$WORK_DIR/sqlite3'"))
+            RootHelper.execMultiple(listOf("cp -f '${tmp.absolutePath}' '$WORK_DIR/sqlite3'", "chmod 755 '$WORK_DIR/sqlite3'"))
             tmp.delete()
         } catch (_: Exception) { }
     }
 
     private suspend fun kotlinPatchChromium(srcPkg: String, dstPkg: String): List<JsonPatcher.PatchResult> {
         val results = mutableListOf<JsonPatcher.PatchResult>()
-        val dstBase = findChromiumBase(dstPkg)
-        val srcBase = findChromiumBase(srcPkg)
+        val dstBase = RootHelper.exec("for d in app_chrome app_chromium app_brave app_vivaldi; do [ -d \"/data/data/${dstPkg}/\$d\" ] && echo \"\$d\" && break; done").stdout.trim()
         if (dstBase.isNotEmpty()) {
             val path = "/data/data/${dstPkg}/$dstBase/Default"
             results.add(jsonPatcher.neutralizeSecurePreferences("$path/Secure Preferences", srcPkg, dstPkg))
@@ -206,8 +206,8 @@ class DataMover(private val context: Context) {
 
     private suspend fun kotlinPatchGecko(srcPkg: String, dstPkg: String): List<JsonPatcher.PatchResult> {
         val results = mutableListOf<JsonPatcher.PatchResult>()
-        val dstProf = findGeckoProfile(dstPkg)
-        val srcProf = findGeckoProfile(srcPkg)
+        val dstProf = RootHelper.exec("p=\$(find /data/data/${dstPkg}/files/mozilla -maxdepth 1 -type d -name \"*.default*\" 2>/dev/null | head -1); echo \"\$p\"").stdout.trim()
+        val srcProf = RootHelper.exec("p=\$(find /data/data/${srcPkg}/files/mozilla -maxdepth 1 -type d -name \"*.default*\" 2>/dev/null | head -1); echo \"\$p\"").stdout.trim()
         if (dstProf.isNotEmpty() && srcProf.isNotEmpty()) {
             results.add(jsonPatcher.patchGeckoExtensionsJson("$dstProf/extensions.json", srcPkg, dstPkg, srcProf.substringAfterLast("/"), dstProf.substringAfterLast("/")))
             results.add(jsonPatcher.syncGeckoUuids("$srcProf/prefs.js", "$dstProf/prefs.js"))
