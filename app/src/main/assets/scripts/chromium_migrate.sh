@@ -1,6 +1,6 @@
 #!/system/bin/sh
 # ============================================================
-#  chromium_migrate.sh — Chromium goc scripti (v2)
+#  chromium_migrate.sh v3
 # ============================================================
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 if [ -z "$SCRIPT_DIR" ]; then
@@ -11,55 +11,81 @@ fi
 SRC="$1"
 DST="$2"
 
+G_BASE=""
+G_PROFILE=""
+
 # ============================================================
 #  DİZİN KEŞFİ
 # ============================================================
 find_chromium_base() {
     local pkg="$1"
+    G_BASE=""
+
+    local dd
+    dd=$(find_data_dir "$pkg")
+    if [ -z "$dd" ]; then
+        log_error "Veri dizini bulunamadi: $pkg"
+        return 1
+    fi
+
     for d in app_chrome app_chromium app_brave app_vivaldi; do
-        if [ -d "/data/data/${pkg}/${d}" ]; then
-            echo "/data/data/${pkg}/${d}"
+        if [ -d "${dd}/${d}" ]; then
+            G_BASE="${dd}/${d}"
+            log_ok "Chromium base: $G_BASE"
             return 0
         fi
     done
-    echo ""
+
+    # Genis arama: Bookmarks veya History dosyasi ara
+    local found
+    found=$(find "$dd" -name "Bookmarks" -type f 2>/dev/null | head -1)
+    if [ -n "$found" ]; then
+        G_BASE=$(dirname "$(dirname "$found")")
+        log_ok "Chromium base (arama): $G_BASE"
+        return 0
+    fi
+
+    log_error "Chromium base bulunamadi: $pkg"
+    log_info "--- Dizin icerigi ---"
+    ls -la "$dd/" 2>/dev/null | while IFS= read -r l; do log_info "  $l"; done
     return 1
 }
 
 find_chromium_profile() {
     local base="$1"
-    if [ -z "$base" ]; then echo ""; return 1; fi
+    G_PROFILE=""
+    if [ -z "$base" ]; then return 1; fi
+
     if [ -d "${base}/Default" ]; then
-        echo "${base}/Default"
+        G_PROFILE="${base}/Default"
         return 0
     fi
-    # History iceren ilk dizin
+
     for d in "${base}"/*/; do
-        if [ -f "${d}History" ]; then
-            echo "${d%/}"
+        [ ! -d "$d" ] && continue
+        if [ -f "${d}History" ] || [ -f "${d}Bookmarks" ]; then
+            G_PROFILE="${d%/}"
             return 0
         fi
     done
-    # Ilk alt dizin
+
     for d in "${base}"/*/; do
         if [ -d "$d" ]; then
-            echo "${d%/}"
+            G_PROFILE="${d%/}"
             return 0
         fi
     done
-    echo ""
+
     return 1
 }
 
 ensure_chromium_profile() {
     local pkg="$1"
-    local base
-    base=$(find_chromium_base "$pkg")
-    if [ -n "$base" ]; then
-        local p
-        p=$(find_chromium_profile "$base")
-        if [ -n "$p" ] && [ -d "$p" ]; then
-            echo "$p"
+
+    find_chromium_base "$pkg"
+    if [ -n "$G_BASE" ]; then
+        find_chromium_profile "$G_BASE"
+        if [ -n "$G_PROFILE" ]; then
             return 0
         fi
     fi
@@ -70,20 +96,21 @@ ensure_chromium_profile() {
     if [ -n "$intent" ]; then
         am start -n "$intent" >/dev/null 2>&1
     else
+        log_info "monkey ile baslatiliyor"
         monkey -p "$pkg" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
     fi
-    sleep 8
+    sleep 10
     stop_pkg "$pkg"
     sleep 2
 
-    base=$(find_chromium_base "$pkg")
-    if [ -z "$base" ]; then
-        log_error "Chromium base bulunamadi: $pkg"
-        echo ""; return 1
+    find_chromium_base "$pkg"
+    if [ -z "$G_BASE" ]; then
+        log_error "Chromium base hala bulunamadi: $pkg"
+        G_PROFILE=""
+        return 1
     fi
-    local p
-    p=$(find_chromium_profile "$base")
-    echo "$p"
+    find_chromium_profile "$G_BASE"
+    return 0
 }
 
 # ============================================================
@@ -93,7 +120,7 @@ main() {
     log_init
 
     log_info "============================================"
-    log_info "  Chromium Goc — v2"
+    log_info "  Chromium Goc v3"
     log_info "  Kaynak: $SRC"
     log_info "  Hedef:  $DST"
     log_info "============================================"
@@ -109,17 +136,12 @@ main() {
     # ---- FAZA 0 ----
     log_info "FAZA 0: KESIF"
 
-    local src_base
-    src_base=$(find_chromium_base "$SRC")
-    if [ -z "$src_base" ]; then
-        log_error "Kaynak base bulunamadi!"
-        ls -la "/data/data/$SRC/" 2>/dev/null | while IFS= read -r l; do log_info "  $l"; done
-        exit 1
-    fi
-    log_ok "Kaynak base: $src_base"
+    find_chromium_base "$SRC"
+    local src_base="$G_BASE"
+    if [ -z "$src_base" ]; then exit 1; fi
 
-    local src_profile
-    src_profile=$(find_chromium_profile "$src_base")
+    find_chromium_profile "$src_base"
+    local src_profile="$G_PROFILE"
     if [ -z "$src_profile" ]; then
         log_error "Kaynak profil bulunamadi!"
         exit 1
@@ -128,19 +150,17 @@ main() {
 
     check_disk "$src_profile"
 
-    local dst_profile
-    dst_profile=$(ensure_chromium_profile "$DST")
-    local dst_base
-    dst_base=$(find_chromium_base "$DST")
+    ensure_chromium_profile "$DST"
+    local dst_profile="$G_PROFILE"
+    local dst_base="$G_BASE"
 
     if [ -z "$dst_profile" ] || [ -z "$dst_base" ]; then
         log_error "Hedef hazirlanamaadi!"
         exit 1
     fi
-    log_ok "Hedef base: $dst_base"
     log_ok "Hedef profil: $dst_profile"
 
-    # Yedekle
+    # Yedek
     mkdir -p "${BACKUP_DIR}/target_original_profile" 2>/dev/null
     cp -rf "$dst_profile/." "${BACKUP_DIR}/target_original_profile/" 2>/dev/null
     save_manifest "$DST" "CHROMIUM" "$dst_profile"
@@ -148,10 +168,9 @@ main() {
     stop_pkg "$DST"
     sleep 1
 
-    # ---- FAZA 1: Veritabanlari ----
+    # ---- FAZA 1 ----
     log_info "FAZA 1: VERITABANI GOCU"
 
-    # Preferences kopyala (yamalamadan once)
     safe_cp "${src_profile}/Preferences" "${dst_profile}/Preferences" "Preferences"
     safe_cp "${src_profile}/Secure Preferences" "${dst_profile}/Secure Preferences" "Secure Preferences"
 
@@ -166,33 +185,29 @@ main() {
         done
     done
 
-    # ---- FAZA 2: Eklentiler ----
+    # ---- FAZA 2 ----
     log_info "FAZA 2: EKLENTI GOCU"
 
-    safe_cp "${src_profile}/Extensions"               "${dst_profile}/Extensions" "Extensions/"
-    safe_cp "${src_profile}/Local Extension Settings"  "${dst_profile}/Local Extension Settings" "Local Extension Settings/"
-    safe_cp "${src_profile}/Extension State"           "${dst_profile}/Extension State" "Extension State/"
-    safe_cp "${src_profile}/Extension Rules"           "${dst_profile}/Extension Rules" "Extension Rules/"
+    safe_cp "${src_profile}/Extensions" "${dst_profile}/Extensions" "Extensions/"
+    safe_cp "${src_profile}/Local Extension Settings" "${dst_profile}/Local Extension Settings" "Local Extension Settings/"
+    safe_cp "${src_profile}/Extension State" "${dst_profile}/Extension State" "Extension State/"
+    safe_cp "${src_profile}/Extension Rules" "${dst_profile}/Extension Rules" "Extension Rules/"
 
-    # Eklenti IndexedDB
     if [ -d "${src_profile}/IndexedDB" ]; then
         for idb in "${src_profile}/IndexedDB/chrome-extension_"*; do
             if [ -d "$idb" ]; then
-                local n
-                n=$(basename "$idb")
-                safe_cp "$idb" "${dst_profile}/IndexedDB/${n}" "ext-idb: $n"
+                safe_cp "$idb" "${dst_profile}/IndexedDB/$(basename "$idb")" "ext-idb"
             fi
         done
     fi
 
-    # ---- FAZA 3: JSON Yamalama ----
+    # ---- FAZA 3 ----
     log_info "FAZA 3: JSON YAMALAMA"
 
     local src_bn dst_bn
     src_bn=$(basename "$src_base")
     dst_bn=$(basename "$dst_base")
 
-    # Local State
     if [ ! -f "${dst_base}/Local State" ] && [ -f "${src_base}/Local State" ]; then
         safe_cp "${src_base}/Local State" "${dst_base}/Local State" "Local State"
     fi
@@ -201,6 +216,7 @@ main() {
         if [ -f "$jf" ] && grep -q "$SRC" "$jf" 2>/dev/null; then
             cp -f "$jf" "${jf}.bak" 2>/dev/null
             sed -i "s|/data/data/${SRC}/|/data/data/${DST}/|g" "$jf" 2>/dev/null
+            sed -i "s|/data/user/0/${SRC}/|/data/user/0/${DST}/|g" "$jf" 2>/dev/null
             sed -i "s|${SRC}|${DST}|g" "$jf" 2>/dev/null
             if [ "$src_bn" != "$dst_bn" ]; then
                 sed -i "s|${src_bn}|${dst_bn}|g" "$jf" 2>/dev/null
@@ -209,20 +225,19 @@ main() {
         fi
     done
 
-    # Secure Preferences HMAC temizle
     if [ -f "${dst_profile}/Secure Preferences" ]; then
         sed -i '/"super_mac"/d' "${dst_profile}/Secure Preferences" 2>/dev/null
         sed -i 's/"mac":"[^"]*"/"mac":""/g' "${dst_profile}/Secure Preferences" 2>/dev/null
-        log_ok "Secure Prefs HMAC notralize edildi"
+        log_ok "Secure Prefs HMAC temizlendi"
     fi
 
-    # ---- FAZA 4: SQLite Yamalama ----
+    # ---- FAZA 4 ----
     log_info "FAZA 4: SQLite YAMALAMA"
 
     if [ -n "$SQLITE3_BIN" ]; then
         for db_name in History Cookies "Web Data" "Login Data" Favicons; do
             local db="${dst_profile}/${db_name}"
-            if [ ! -f "$db" ]; then continue; fi
+            [ ! -f "$db" ] && continue
 
             local tables
             tables=$($SQLITE3_BIN "$db" "SELECT name FROM sqlite_master WHERE type='table';" 2>/dev/null)
@@ -240,32 +255,32 @@ main() {
                     fi
                 done
             done
-            if [ $patched -gt 0 ]; then
-                log_ok "SQLite yamalandi: $db_name ($patched)"
-            fi
+            [ $patched -gt 0 ] && log_ok "SQLite: $db_name ($patched)"
         done
     else
         log_warn "sqlite3 yok, SQLite yamalama atlandi"
     fi
 
-    # ---- FAZA 5: Web Depolama ----
+    # ---- FAZA 5 ----
     log_info "FAZA 5: WEB DEPOLAMA"
 
-    safe_cp "${src_profile}/Local Storage"   "${dst_profile}/Local Storage" "Local Storage/"
-    safe_cp "${src_profile}/IndexedDB"       "${dst_profile}/IndexedDB" "IndexedDB/"
-    safe_cp "${src_profile}/databases"       "${dst_profile}/databases" "WebSQL/"
+    safe_cp "${src_profile}/Local Storage" "${dst_profile}/Local Storage" "Local Storage/"
+    safe_cp "${src_profile}/IndexedDB" "${dst_profile}/IndexedDB" "IndexedDB/"
+    safe_cp "${src_profile}/databases" "${dst_profile}/databases" "WebSQL/"
     safe_cp "${src_profile}/Session Storage" "${dst_profile}/Session Storage" "Session Storage/"
 
-    # ---- FAZA 6: Temizlik ----
+    # ---- FAZA 6 ----
     log_info "FAZA 6: TEMIZLIK"
 
     for cd in GPUCache "Code Cache" Cache; do
         rm -rf "${dst_profile}/${cd}" 2>/dev/null
     done
-    rm -rf "/data/data/${DST}/cache" 2>/dev/null
 
-    local uid
-    uid=$(get_uid "$DST")
+    local dst_dd
+    dst_dd=$(find_data_dir "$DST")
+    [ -n "$dst_dd" ] && rm -rf "${dst_dd}/cache" 2>/dev/null
+
+    local uid=$(get_uid "$DST")
     if [ -n "$uid" ]; then
         fix_perms "$dst_base" "$uid"
     else
@@ -276,12 +291,11 @@ main() {
 
     log_info "============================================"
     log_ok   "CHROMIUM GOCU TAMAMLANDI!"
-    log_warn "Sifreler Keystore'a bagli — farkli UID'de cozulemeyebilir"
     log_info "============================================"
 }
 
 if [ -z "$SRC" ] || [ -z "$DST" ]; then
-    echo "Kullanim: $0 <kaynak_paket> <hedef_paket>"
+    echo "Kullanim: $0 <kaynak> <hedef>" >&2
     exit 1
 fi
 

@@ -56,15 +56,19 @@ class DataMover(private val context: Context) {
         if (pkg in KNOWN_CHROMIUM) return BrowserType.CHROMIUM
 
         try {
-            val gecko = RootHelper.exec("[ -d '/data/data/$pkg/files/mozilla' ] && echo GECKO")
-            if ("GECKO" in gecko.stdout) return BrowserType.GECKO
-
-            val chromium = RootHelper.exec(
-                """for d in app_chrome app_chromium app_brave app_vivaldi; do
-                    [ -d "/data/data/$pkg/${'$'}d" ] && echo CHROMIUM && break
+            val res = RootHelper.exec(
+                """dd=""
+                for p in "/data/data/$pkg" "/data/user/0/$pkg"; do
+                    [ -d "${'$'}p" ] && dd="${'$'}p" && break
+                done
+                [ -z "${'$'}dd" ] && exit 1
+                if [ -d "${'$'}dd/files/mozilla" ]; then echo GECKO; exit 0; fi
+                for d in app_chrome app_chromium app_brave app_vivaldi; do
+                    [ -d "${'$'}dd/${'$'}d" ] && echo CHROMIUM && exit 0
                 done"""
             )
-            if ("CHROMIUM" in chromium.stdout) return BrowserType.CHROMIUM
+            if ("GECKO" in res.stdout) return BrowserType.GECKO
+            if ("CHROMIUM" in res.stdout) return BrowserType.CHROMIUM
         } catch (_: Exception) { }
 
         return BrowserType.UNKNOWN
@@ -91,9 +95,13 @@ class DataMover(private val context: Context) {
 
             extractSqlite3Binary()
 
-            val engine = if (detectEngine(sourcePkg) != BrowserType.UNKNOWN) detectEngine(sourcePkg) else detectEngine(targetPkg)
-            if (engine == BrowserType.UNKNOWN) {
-                return@withContext MigrationResult.Failure("Motor belirlenemedi!")
+            val srcEngine = detectEngine(sourcePkg)
+            val dstEngine = detectEngine(targetPkg)
+
+            val engine = when {
+                srcEngine != BrowserType.UNKNOWN -> srcEngine
+                dstEngine != BrowserType.UNKNOWN -> dstEngine
+                else -> return@withContext MigrationResult.Failure("Motor tipi belirlenemedi!")
             }
 
             val scriptName = when (engine) {
@@ -115,7 +123,11 @@ class DataMover(private val context: Context) {
                 args = listOf(sourcePkg, targetPkg)
             ) { line ->
                 logLines.add(line)
-                parsePhase(line)?.let { (n, nm) -> phase = n; phaseName = nm }
+                val phaseMatch = Regex("""FAZA\s+(\d+):\s*(.*)""").find(line)
+                if (phaseMatch != null) {
+                    phase = phaseMatch.groupValues[1].toIntOrNull() ?: phase
+                    phaseName = phaseMatch.groupValues[2].trim()
+                }
                 emitProgress(onProgress, phase, phaseName, line, progressPct(phase, engine))
                 if ("[WARN]" in line) warnings.add(line.substringAfter("[WARN]").trim())
                 if ("[ERR]" in line) errors.add(line.substringAfter("[ERR]").trim())
@@ -162,7 +174,7 @@ class DataMover(private val context: Context) {
                 val target = "$SCRIPTS_DIR/$name"
                 val content = try { context.assets.open(path).bufferedReader().readText() } catch (e: Exception) { return@withContext false }
                 val tmp = File(context.cacheDir, "s_$name").apply { writeText(content) }
-                RootHelper.execMultiple(listOf("cp -f '${tmp.absolutePath}' '$target'", "chmod 755 '$target'", "sed -i 's/\\r$//' '$target'"))
+                RootHelper.execMultiple(listOf("cp -f '${temp.absolutePath}' '$target'", "chmod 755 '$target'", "sed -i 's/\\r$//' '$target'"))
                 tmp.delete()
             }
             true
@@ -175,14 +187,15 @@ class DataMover(private val context: Context) {
             val input = context.assets.open("bin/$abi/sqlite3")
             val tmp = File(context.cacheDir, "sqlite3")
             tmp.outputStream().use { input.copyTo(it) }
-            RootHelper.execMultiple(listOf("cp -f '${tmp.absolutePath}' '$WORK_DIR/sqlite3'", "chmod 755 '$WORK_DIR/sqlite3'"))
+            RootHelper.execMultiple(listOf("cp -f '${temp.absolutePath}' '$WORK_DIR/sqlite3'", "chmod 755 '$WORK_DIR/sqlite3'"))
             tmp.delete()
         } catch (_: Exception) { }
     }
 
     private suspend fun kotlinPatchChromium(srcPkg: String, dstPkg: String): List<JsonPatcher.PatchResult> {
         val results = mutableListOf<JsonPatcher.PatchResult>()
-        val dstBase = RootHelper.exec("for d in app_chrome app_chromium app_brave app_vivaldi; do [ -d \"/data/data/${dstPkg}/\$d\" ] && echo \"\$d\" && break; done").stdout.trim()
+        val dstBase = findChromiumBase(dstPkg)
+        val srcBase = findChromiumBase(srcPkg)
         if (dstBase.isNotEmpty()) {
             val path = "/data/data/${dstPkg}/$dstBase/Default"
             results.add(jsonPatcher.neutralizeSecurePreferences("$path/Secure Preferences", srcPkg, dstPkg))
@@ -193,8 +206,8 @@ class DataMover(private val context: Context) {
 
     private suspend fun kotlinPatchGecko(srcPkg: String, dstPkg: String): List<JsonPatcher.PatchResult> {
         val results = mutableListOf<JsonPatcher.PatchResult>()
-        val dstProf = RootHelper.exec("p=\$(find /data/data/${dstPkg}/files/mozilla -maxdepth 1 -type d -name \"*.default*\" 2>/dev/null | head -1); echo \"\$p\"").stdout.trim()
-        val srcProf = RootHelper.exec("p=\$(find /data/data/${srcPkg}/files/mozilla -maxdepth 1 -type d -name \"*.default*\" 2>/dev/null | head -1); echo \"\$p\"").stdout.trim()
+        val dstProf = findGeckoProfile(dstPkg)
+        val srcProf = findGeckoProfile(srcPkg)
         if (dstProf.isNotEmpty() && srcProf.isNotEmpty()) {
             results.add(jsonPatcher.patchGeckoExtensionsJson("$dstProf/extensions.json", srcPkg, dstPkg, srcProf.substringAfterLast("/"), dstProf.substringAfterLast("/")))
             results.add(jsonPatcher.syncGeckoUuids("$srcProf/prefs.js", "$dstProf/prefs.js"))
@@ -202,7 +215,47 @@ class DataMover(private val context: Context) {
         return results
     }
 
-    private fun parsePhase(line: String) = Regex("""FAZA\s+(\d+):\s+(.+)""").find(line)?.let { it.groupValues[1].toInt() to it.groupValues[2].trim() }
+    private suspend fun findChromiumBase(pkg: String): String {
+        val r = RootHelper.exec(
+            """dd=""
+            for p in "/data/data/$pkg" "/data/user/0/$pkg"; do
+                [ -d "${'$'}p" ] && dd="${'$'}p" && break
+            done
+            [ -z "${'$'}dd" ] && exit 1
+            for d in app_chrome app_chromium app_brave app_vivaldi; do
+                [ -d "${'$'}dd/${'$'}d" ] && echo "${'$'}d" && exit 0
+            done"""
+        )
+        return r.stdout.trim()
+    }
+
+    private suspend fun findGeckoProfile(pkg: String): String {
+        val r = RootHelper.exec(
+            """dd=""
+            for p in "/data/data/$pkg" "/data/user/0/$pkg"; do
+                [ -d "${'$'}p" ] && dd="${'$'}p" && break
+            done
+            [ -z "${'$'}dd" ] && exit 1
+            md="${'$'}dd/files/mozilla"
+            if [ -d "${'$'}md" ]; then
+                for d in "${'$'}md"/*/; do
+                    [ -d "${'$'}d" ] && echo "${'$'}{d%/}" && exit 0
+                done
+            fi
+            f=${'$'}(find "${'$'}dd" -name "places.sqlite" -type f 2>/dev/null | head -1)
+            if [ -n "${'$'}f" ]; then
+                dirname "${'$'}f"
+                exit 0
+            fi
+            f=${'$'}(find "${'$'}dd" -name "prefs.js" -type f 2>/dev/null | head -1)
+            if [ -n "${'$'}f" ]; then
+                dirname "${'$'}f"
+                exit 0
+            fi"""
+        )
+        return r.stdout.trim()
+    }
+
     private fun progressPct(p: Int, e: BrowserType) = if (e == BrowserType.GECKO) intArrayOf(12,22,45,70,85,92).getOrElse(p){92} else intArrayOf(8,22,38,52,62,75,85,92).getOrElse(p){95}
     private suspend fun emitProgress(cb: suspend (MigrationResult.Progress) -> Unit, ph: Int, nm: String, d: String, pct: Int) = withContext(Dispatchers.Main) { cb(MigrationResult.Progress(ph, nm, d, pct)) }
     private fun buildResult(exit: Int, errs: List<String>, warns: List<String>, lines: List<String>) = if (exit == 0) MigrationResult.Success("Goc basarili!", warns, LOG_FILE) else MigrationResult.Failure("Basarisiz (exit=$exit)", lines.takeLast(10).joinToString("\n"), LOG_FILE)
