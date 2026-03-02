@@ -1,6 +1,6 @@
 #!/system/bin/sh
 # ============================================================
-#  gecko_migrate.sh v4
+#  gecko_migrate.sh v5
 #  Fenix düzeltmesi: files/ altindaki DB'ler + sekmeler
 # ============================================================
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
@@ -135,7 +135,7 @@ main() {
     log_init
 
     log_info "============================================"
-    log_info "  Gecko Goc v4 (Fenix uyumlu)"
+    log_info "  Gecko Goc v5 (Fenix uyumlu)"
     log_info "  Kaynak: $SRC"
     log_info "  Hedef:  $DST"
     log_info "============================================"
@@ -228,11 +228,12 @@ main() {
         safe_cp "${src_files}/tabs.sqlite-shm"  "${dst_files}/tabs.sqlite-shm"  "tabs.sqlite-shm"
     fi
 
-    # --- Session verisi ---
+    # --- Session verisi (Fenix sekme durumu) ---
+    # KOPYALANMAZ — Fenix/Iceraven surumleri arasi JSON format farki
+    # crash yaratir. tabs.sqlite sekme verilerini zaten tasiyor.
+    # Hedef tarayici ilk acilista tabs.sqlite'dan session'i yeniden olusturur.
     if [ -f "${src_files}/mozilla_components_session_storage_gecko.json" ]; then
-        safe_cp "${src_files}/mozilla_components_session_storage_gecko.json" \
-                "${dst_files}/mozilla_components_session_storage_gecko.json" \
-                "Session (sekme durumu)"
+        log_warn "Session JSON atlanıyor (format uyumsuzlugu onlemi)"
     fi
 
     # --- push.sqlite ---
@@ -359,7 +360,7 @@ main() {
     fi
 
     stop_pkg "$DST"
-    log_ok "GECKO GOCU TAMAMLANDI! (v4)"
+    log_ok "GECKO GOCU TAMAMLANDI! (v5)"
 }
 
 if [ -z "$SRC" ] || [ -z "$DST" ]; then
