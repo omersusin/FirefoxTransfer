@@ -29,7 +29,8 @@ Open-source tool that migrates **all data** (bookmarks, passwords, history, exte
 3. Select Source browser (where data is coming from).
 4. Select Target browser (where data will be written).
 5. Press "START MIGRATION".
-6. Once finished, open the target browser and verify.
+6. (Optional) Use "DELETE BACKUPS" to clear storage once verified.
+7. Open the target browser and enjoy your data.
 
 ## ⚠️ Known Limitations
 - **Chromium Passwords**: Moving between different package UIDs may cause password decryption issues as the Android Keystore keys change. No issues when reinstalling the same package.
