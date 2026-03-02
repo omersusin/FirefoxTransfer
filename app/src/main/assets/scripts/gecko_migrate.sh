@@ -1,10 +1,7 @@
 #!/system/bin/sh
 # ============================================================
-#  gecko_migrate.sh v3
-#  Düzeltmeler:
-#    - Global degisken (stdout kirlenmesi onlendi)
-#    - /data/user/0 destegi
-#    - Genis profil arama
+#  gecko_migrate.sh v4
+#  Fenix düzeltmesi: files/ altindaki DB'ler + sekmeler
 # ============================================================
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 if [ -z "$SCRIPT_DIR" ]; then
@@ -15,73 +12,47 @@ fi
 SRC="$1"
 DST="$2"
 
-# Global donusler — echo/stdout KULLANILMAZ
 G_PROFILE=""
 G_DATA_DIR=""
 
 # ============================================================
-#  VERI DİZİNİ + PROFİL KEŞFİ
+#  VERİ DİZİNİ + PROFİL KEŞFİ
 # ============================================================
-
-# Paketin gercek veri dizinini bul
 resolve_data_dir() {
     local pkg="$1"
     G_DATA_DIR=""
-
     G_DATA_DIR=$(find_data_dir "$pkg")
-
     if [ -z "$G_DATA_DIR" ]; then
         log_error "Veri dizini bulunamadi: $pkg"
-        log_info "Kontrol edilen yollar:"
-        log_info "  /data/data/$pkg"
-        log_info "  /data/user/0/$pkg"
-
-        # Debug: /data altinda paketle ilgili ne var?
-        log_info "--- /data altinda arama ---"
-        find /data -maxdepth 4 -type d -name "$pkg" 2>/dev/null | while IFS= read -r line; do
-            log_info "  Bulundu: $line"
-        done
         return 1
     fi
-
     log_ok "Veri dizini: $G_DATA_DIR"
     return 0
 }
 
-# Gecko profil dizinini bul — sonucu G_PROFILE'a yaz
 find_gecko_profile() {
     local pkg="$1"
     G_PROFILE=""
 
-    # Veri dizinini coz
     resolve_data_dir "$pkg"
-    if [ -z "$G_DATA_DIR" ]; then
-        return 1
-    fi
+    if [ -z "$G_DATA_DIR" ]; then return 1; fi
 
     local dd="$G_DATA_DIR"
 
-    # Debug: tum dosya yapisini goster
+    # Debug
     log_info "--- $dd/files/ icerigi ---"
     if [ -d "$dd/files" ]; then
         ls -la "$dd/files/" 2>/dev/null | while IFS= read -r line; do
             log_info "  $line"
         done
-    else
-        log_warn "$dd/files/ dizini yok"
     fi
 
-    # --- ARAMA STRATEJISI ---
-    # Her adimda bulundugunda G_PROFILE'a yaz ve don
-
-    # 1. Klasik konum: files/mozilla/<profil>/
+    # 1. files/mozilla/ altinda profil ara
     local mozilla_dir="$dd/files/mozilla"
     if [ -d "$mozilla_dir" ]; then
         log_info "files/mozilla/ bulundu"
 
-        # 1a. profiles.ini
         if [ -f "$mozilla_dir/profiles.ini" ]; then
-            log_info "profiles.ini bulundu, okunuyor..."
             local ini_path
             ini_path=$(grep "^Path=" "$mozilla_dir/profiles.ini" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '\r\n ')
             if [ -n "$ini_path" ] && [ -d "$mozilla_dir/$ini_path" ]; then
@@ -91,11 +62,9 @@ find_gecko_profile() {
             fi
         fi
 
-        # 1b. *.default* glob
         for d in "$mozilla_dir"/*/; do
             [ ! -d "$d" ] && continue
-            local dname
-            dname=$(basename "$d")
+            local dname=$(basename "$d")
             case "$dname" in
                 *.default*|*.svc*|*.release*|*.nightly*)
                     G_PROFILE="${d%/}"
@@ -105,17 +74,6 @@ find_gecko_profile() {
             esac
         done
 
-        # 1c. places.sqlite iceren dizin
-        for d in "$mozilla_dir"/*/; do
-            [ ! -d "$d" ] && continue
-            if [ -f "${d}places.sqlite" ]; then
-                G_PROFILE="${d%/}"
-                log_ok "Profil (places.sqlite): $G_PROFILE"
-                return 0
-            fi
-        done
-
-        # 1d. Herhangi bir alt dizin
         for d in "$mozilla_dir"/*/; do
             if [ -d "$d" ]; then
                 G_PROFILE="${d%/}"
@@ -125,98 +83,42 @@ find_gecko_profile() {
         done
     fi
 
-    # 2. Alternatif: GeckoView profili farkli yerde olabilir
-    #    Bazi fork'lar files/geckoview/ veya dogrudan files/ kullanir
-    log_info "files/mozilla/ yok veya bos, alternatif araniyor..."
-
-    # 2a. files/ altinda herhangi bir yerde places.sqlite ara
+    # 2. Genis arama
     if [ -d "$dd/files" ]; then
         local found
         found=$(find "$dd/files" -name "places.sqlite" -type f 2>/dev/null | head -1)
         if [ -n "$found" ]; then
             G_PROFILE=$(dirname "$found")
-            log_ok "Profil (find places.sqlite): $G_PROFILE"
+            log_ok "Profil (find): $G_PROFILE"
             return 0
         fi
     fi
 
-    # 2b. files/ altinda herhangi bir yerde prefs.js ara
-    if [ -d "$dd/files" ]; then
-        local found
-        found=$(find "$dd/files" -name "prefs.js" -type f 2>/dev/null | head -1)
-        if [ -n "$found" ]; then
-            G_PROFILE=$(dirname "$found")
-            log_ok "Profil (find prefs.js): $G_PROFILE"
-            return 0
-        fi
-    fi
-
-    # 2c. files/ altinda herhangi bir yerde key4.db ara
-    if [ -d "$dd/files" ]; then
-        local found
-        found=$(find "$dd/files" -name "key4.db" -type f 2>/dev/null | head -1)
-        if [ -n "$found" ]; then
-            G_PROFILE=$(dirname "$found")
-            log_ok "Profil (find key4.db): $G_PROFILE"
-            return 0
-        fi
-    fi
-
-    # 2d. Tum /data/data/<pkg> altinda ara
-    local found
-    found=$(find "$dd" -name "places.sqlite" -type f 2>/dev/null | head -1)
-    if [ -n "$found" ]; then
-        G_PROFILE=$(dirname "$found")
-        log_ok "Profil (genis arama): $G_PROFILE"
-        return 0
-    fi
-
-    # 3. Bulunamadi — hata ayiklama bilgisi goster
     log_error "PROFIL BULUNAMADI: $pkg"
-    log_info "--- $dd tam icerigi (ilk 50 satir) ---"
-    find "$dd" -type f 2>/dev/null | head -50 | while IFS= read -r line; do
-        log_info "  $line"
-    done
-    log_info "--- Bitti ---"
-
     return 1
 }
 
-# ============================================================
-#  HEDEF PROFİL GARANTİSİ
-# ============================================================
 ensure_dst_profile() {
     local pkg="$1"
 
-    # Mevcut profili ara
     find_gecko_profile "$pkg"
-
     if [ -n "$G_PROFILE" ]; then
         log_ok "Hedef profil mevcut: $G_PROFILE"
         return 0
     fi
 
-    # Profil yok — tarayiciyi baslat, profil olusturmasini bekle
     log_info "Hedef profil yok, tarayici baslatiliyor..."
-
-    local intent
-    intent=$(cmd package resolve-activity --brief "$pkg" 2>/dev/null | tail -1)
+    local intent=$(cmd package resolve-activity --brief "$pkg" 2>/dev/null | tail -1)
     if [ -n "$intent" ]; then
-        log_info "am start -n $intent"
         am start -n "$intent" >/dev/null 2>&1
     else
-        log_info "monkey ile baslatiliyor"
         monkey -p "$pkg" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
     fi
-
-    log_info "10 saniye bekleniyor..."
     sleep 10
     stop_pkg "$pkg"
     sleep 2
 
-    # Tekrar ara
     find_gecko_profile "$pkg"
-
     if [ -n "$G_PROFILE" ]; then
         log_ok "Temiz profil olusturuldu: $G_PROFILE"
         return 0
@@ -233,7 +135,7 @@ main() {
     log_init
 
     log_info "============================================"
-    log_info "  Gecko Goc v3"
+    log_info "  Gecko Goc v4 (Fenix uyumlu)"
     log_info "  Kaynak: $SRC"
     log_info "  Hedef:  $DST"
     log_info "============================================"
@@ -246,114 +148,148 @@ main() {
     stop_pkg "$SRC"
     stop_pkg "$DST"
 
-    # ---- FAZA 0: Kesif ----
+    # ==== FAZA 0: Kesif ====
     log_info "FAZA 0: KESIF"
 
     find_gecko_profile "$SRC"
     local src_profile="$G_PROFILE"
+    local src_dd="$G_DATA_DIR"
+    local src_files="$src_dd/files"
 
     if [ -z "$src_profile" ]; then
         log_error "KAYNAK PROFIL BULUNAMADI!"
         exit 1
     fi
     log_ok "Kaynak profil: $src_profile"
+    log_ok "Kaynak files: $src_files"
     local src_name=$(basename "$src_profile")
 
-    check_disk "$src_profile"
+    check_disk "$src_files"
 
-    # ---- FAZA 1: Hedef ----
+    # ==== FAZA 1: HEDEF PROFIL ====
     log_info "FAZA 1: HEDEF PROFIL"
 
     ensure_dst_profile "$DST"
     local dst_profile="$G_PROFILE"
+    local dst_dd="$G_DATA_DIR"
+    local dst_files="$dst_dd/files"
 
     if [ -z "$dst_profile" ]; then
         log_error "HEDEF PROFIL HAZIRLANAMAADI!"
         exit 1
     fi
     log_ok "Hedef profil: $dst_profile"
+    log_ok "Hedef files: $dst_files"
     local dst_name=$(basename "$dst_profile")
 
     # Yedek
     log_info "Hedef yedekleniyor..."
-    mkdir -p "${BACKUP_DIR}/target_original_profile" 2>/dev/null
-    cp -rf "$dst_profile/." "${BACKUP_DIR}/target_original_profile/" 2>/dev/null
+    mkdir -p "${BACKUP_DIR}/target_files" 2>/dev/null
+    cp -rf "$dst_files/." "${BACKUP_DIR}/target_files/" 2>/dev/null
     save_manifest "$DST" "GECKO" "$dst_profile"
     log_ok "Yedek: $BACKUP_DIR"
 
     stop_pkg "$DST"
     sleep 1
 
-    # ---- FAZA 2: Cekirdek Veri ----
-    log_info "FAZA 2: CEKIRDEK VERI KOPYALAMA"
+    # ==== FAZA 2: Fenix files/ Seviyesi DB'ler ====
+    log_info "FAZA 2: FILES-SEVIYESI VERILER"
+
+    # --- places.sqlite (Gecmis + Yer Imleri) ---
+    if [ -f "${src_files}/places.sqlite" ]; then
+        log_info "places.sqlite files/ altinda (Fenix)"
+        safe_cp "${src_files}/places.sqlite"     "${dst_files}/places.sqlite"     "places.sqlite (files/)"
+        safe_cp "${src_files}/places.sqlite-wal"  "${dst_files}/places.sqlite-wal"  "places.sqlite-wal (files/)"
+        safe_cp "${src_files}/places.sqlite-shm"  "${dst_files}/places.sqlite-shm"  "places.sqlite-shm (files/)"
+    elif [ -f "${src_profile}/places.sqlite" ]; then
+        log_info "places.sqlite profil altinda (klasik)"
+        safe_cp "${src_profile}/places.sqlite"     "${dst_profile}/places.sqlite"     "places.sqlite (profil)"
+        safe_cp "${src_profile}/places.sqlite-wal"  "${dst_profile}/places.sqlite-wal"  "places.sqlite-wal (profil)"
+        safe_cp "${src_profile}/places.sqlite-shm"  "${dst_profile}/places.sqlite-shm"  "places.sqlite-shm (profil)"
+    fi
+
+    # --- logins.json + key4.db (Sifreler) ---
+    if [ -f "${src_files}/logins.json" ]; then
+        safe_cp "${src_files}/logins.json" "${dst_files}/logins.json" "logins.json (files/)"
+    elif [ -f "${src_profile}/logins.json" ]; then
+        safe_cp "${src_profile}/logins.json" "${dst_profile}/logins.json" "logins.json (profil)"
+    fi
+
+    if [ -f "${src_files}/key4.db" ]; then
+        safe_cp "${src_files}/key4.db" "${dst_files}/key4.db" "key4.db (files/)"
+    elif [ -f "${src_profile}/key4.db" ]; then
+        safe_cp "${src_profile}/key4.db" "${dst_profile}/key4.db" "key4.db (profil)"
+    fi
+
+    # --- tabs.sqlite (Sekmeler) ---
+    if [ -f "${src_files}/tabs.sqlite" ]; then
+        safe_cp "${src_files}/tabs.sqlite"     "${dst_files}/tabs.sqlite"     "tabs.sqlite"
+        safe_cp "${src_files}/tabs.sqlite-wal"  "${dst_files}/tabs.sqlite-wal"  "tabs.sqlite-wal"
+        safe_cp "${src_files}/tabs.sqlite-shm"  "${dst_files}/tabs.sqlite-shm"  "tabs.sqlite-shm"
+    fi
+
+    # --- Session verisi ---
+    if [ -f "${src_files}/mozilla_components_session_storage_gecko.json" ]; then
+        safe_cp "${src_files}/mozilla_components_session_storage_gecko.json" \
+                "${dst_files}/mozilla_components_session_storage_gecko.json" \
+                "Session (sekme durumu)"
+    fi
+
+    # --- push.sqlite ---
+    safe_cp "${src_files}/push.sqlite" "${dst_files}/push.sqlite" "push.sqlite"
+
+    # --- Diger files-seviyesi dosyalar ---
+    for f in "nimbus_messages_metadata.json" "profileInstalled" "mozilla_components_service_mars_tiles.json"; do
+        safe_cp "${src_files}/${f}" "${dst_files}/${f}" "$f"
+    done
+
+    # ==== FAZA 3: Profil-Seviyesi Veriler ====
+    log_info "FAZA 3: PROFIL-SEVIYESI VERILER"
 
     for f in \
-        places.sqlite places.sqlite-wal places.sqlite-shm \
         favicons.sqlite favicons.sqlite-wal favicons.sqlite-shm \
-        logins.json key4.db \
         formhistory.sqlite \
         cookies.sqlite cookies.sqlite-wal cookies.sqlite-shm \
         cert9.db permissions.sqlite content-prefs.sqlite \
         webappsstore.sqlite \
     ; do
-        safe_cp "${src_profile}/${f}" "${dst_profile}/${f}" "$f"
+        if [ -f "${src_profile}/${f}" ]; then
+            safe_cp "${src_profile}/${f}" "${dst_profile}/${f}" "$f"
+        fi
     done
 
-    # ---- FAZA 3: Eklentiler ----
-    log_info "FAZA 3: EKLENTI GOCU"
+    # ==== FAZA 4: Eklentiler ====
+    log_info "FAZA 4: EKLENTI GOCU"
 
     safe_cp "${src_profile}/extensions" "${dst_profile}/extensions" "extensions/"
     safe_cp "${src_profile}/extensions.json" "${dst_profile}/extensions.json" "extensions.json"
     safe_cp "${src_profile}/extension-preferences.json" "${dst_profile}/extension-preferences.json" "extension-preferences.json"
-    safe_cp "${src_profile}/storage-sync-v2.sqlite" "${dst_profile}/storage-sync-v2.sqlite" "storage-sync-v2.sqlite"
     safe_cp "${src_profile}/browser-extension-data" "${dst_profile}/browser-extension-data" "browser-extension-data/"
+
+    if [ -f "${src_profile}/storage-sync-v2.sqlite" ]; then
+        safe_cp "${src_profile}/storage-sync-v2.sqlite" "${dst_profile}/storage-sync-v2.sqlite" "storage-sync (profil)"
+    fi
+    if [ -f "${src_files}/storage-sync-v2.sqlite" ]; then
+        safe_cp "${src_files}/storage-sync-v2.sqlite" "${dst_files}/storage-sync-v2.sqlite" "storage-sync (files/)"
+    fi
 
     # extensions.json yol yamalama
     if [ -f "${dst_profile}/extensions.json" ]; then
         log_info "extensions.json yollari yamalaniyor..."
-
-        # Kaynak veri dizini koku
-        local src_dd=""
-        G_DATA_DIR=""
-        resolve_data_dir "$SRC"
-        src_dd="$G_DATA_DIR"
-
-        # Hedef veri dizini koku
-        local dst_dd=""
-        G_DATA_DIR=""
-        resolve_data_dir "$DST"
-        dst_dd="$G_DATA_DIR"
-
-        if [ -n "$src_dd" ] && [ -n "$dst_dd" ]; then
-            # Tam profil yolu
-            sed -i "s|${src_dd}/files/mozilla/${src_name}|${dst_dd}/files/mozilla/${dst_name}|g" \
-                "${dst_profile}/extensions.json" 2>/dev/null
-            # Genel veri dizini
-            sed -i "s|${src_dd}/|${dst_dd}/|g" \
-                "${dst_profile}/extensions.json" 2>/dev/null
-            # Paket adi
-            sed -i "s|${SRC}|${DST}|g" \
-                "${dst_profile}/extensions.json" 2>/dev/null
-            log_ok "extensions.json yamalandi"
-        fi
+        sed -i "s|${src_dd}/files/mozilla/${src_name}|${dst_dd}/files/mozilla/${dst_name}|g" "${dst_profile}/extensions.json" 2>/dev/null
+        sed -i "s|${src_dd}/|${dst_dd}/|g" "${dst_profile}/extensions.json" 2>/dev/null
+        sed -i "s|${SRC}|${DST}|g" "${dst_profile}/extensions.json" 2>/dev/null
+        log_ok "extensions.json yamalandi"
     fi
 
     # UUID senkronizasyonu
     log_info "UUID senkronizasyonu..."
     local src_prefs="${src_profile}/prefs.js"
     local dst_prefs="${dst_profile}/prefs.js"
-
     if [ -f "$src_prefs" ]; then
         [ ! -f "$dst_prefs" ] && touch "$dst_prefs"
-
-        for pn in \
-            "extensions.webextensions.uuids" \
-            "extensions.webextensions.ExtensionStorageIDB.enabled" \
-            "extensions.enabledScopes" \
-            "xpinstall.signatures.required" \
-        ; do
-            local pl
-            pl=$(grep "\"${pn}\"" "$src_prefs" 2>/dev/null | head -1)
+        for pn in "extensions.webextensions.uuids" "extensions.webextensions.ExtensionStorageIDB.enabled" "extensions.enabledScopes" "xpinstall.signatures.required"; do
+            local pl=$(grep "\"${pn}\"" "$src_prefs" 2>/dev/null | head -1)
             if [ -n "$pl" ]; then
                 local tmp="${dst_prefs}.tmp.$$"
                 grep -v "\"${pn}\"" "$dst_prefs" > "$tmp" 2>/dev/null
@@ -362,8 +298,6 @@ main() {
                 log_ok "Pref: $pn"
             fi
         done
-    else
-        log_warn "Kaynak prefs.js yok"
     fi
 
     # Extension IndexedDB
@@ -379,43 +313,53 @@ main() {
         log_ok "Eklenti depolari: $ext_count"
     fi
 
-    # ---- FAZA 4: Temizlik ----
-    log_info "FAZA 4: TEMIZLIK"
+    # ==== FAZA 5: Firefox Hesabi / Sync ====
+    log_info "FAZA 5: FIREFOX HESABI VE SYNC"
 
+    local src_sp="${src_dd}/shared_prefs"
+    local dst_sp="${dst_dd}/shared_prefs"
+    if [ -d "$src_sp" ]; then
+        mkdir -p "$dst_sp" 2>/dev/null
+        for f in "$src_sp"/*; do
+            [ ! -f "$f" ] && continue
+            local fname=$(basename "$f")
+            safe_cp "$f" "${dst_sp}/${fname}" "shared_pref: $fname"
+        done
+    fi
+
+    safe_cp "${src_files}/firefox.settings.services.mozilla.com" "${dst_files}/firefox.settings.services.mozilla.com" "sync settings"
+    safe_cp "${src_files}/datastore" "${dst_files}/datastore" "datastore/"
+    safe_cp "${src_files}/mozac.feature.recentlyclosed" "${dst_files}/mozac.feature.recentlyclosed" "recently closed"
+
+    # ==== FAZA 6: Paket Adi Yamalama ====
+    log_info "FAZA 6: PAKET ADI YAMALAMA"
+    if [ -d "$dst_sp" ] && [ "$SRC" != "$DST" ]; then
+        for f in "$dst_sp"/*.xml; do
+            [ ! -f "$f" ] && continue
+            if grep -q "$SRC" "$f" 2>/dev/null; then
+                sed -i "s|${SRC}|${DST}|g" "$f" 2>/dev/null
+            fi
+        done
+    fi
+
+    # ==== FAZA 7: Temizlik ====
+    log_info "FAZA 7: TEMIZLIK"
     rm -f  "${dst_profile}/addonStartup.json.lz4" 2>/dev/null
     rm -rf "${dst_profile}/startupCache" 2>/dev/null
     rm -f  "${dst_profile}/compatibility.ini" 2>/dev/null
+    rm -f  "${dst_profile}/sessionstore.jsonlz4" 2>/dev/null
+    rm -rf "${dst_profile}/sessionstore-backups" 2>/dev/null
 
-    for sf in sessionstore.jsonlz4 sessionstore-backups \
-              sessionstore.js sessionstore.bak; do
-        rm -rf "${dst_profile}/${sf}" 2>/dev/null
-    done
-    log_ok "Onbellek ve session temizlendi"
+    rm -rf "${dst_dd}/cache" "${dst_dd}/cache2" "${dst_dd}/code_cache" 2>/dev/null
 
-    # Hedef cache
-    resolve_data_dir "$DST"
-    local dst_dd="$G_DATA_DIR"
-    if [ -n "$dst_dd" ]; then
-        rm -rf "${dst_dd}/cache" 2>/dev/null
-        rm -rf "${dst_dd}/cache2" 2>/dev/null
-    fi
-
-    # Sahiplik
     local uid=$(get_uid "$DST")
     if [ -n "$uid" ]; then
-        # Profil dizininin ust klasorundan itibaren duzelt
-        local mozilla_parent=$(dirname "$(dirname "$dst_profile")")
-        fix_perms "$mozilla_parent" "$uid"
-    else
-        log_error "UID alinamadi!"
+        fix_perms "${dst_dd}/files" "$uid"
+        fix_perms "${dst_dd}/shared_prefs" "$uid"
     fi
 
     stop_pkg "$DST"
-
-    log_info "============================================"
-    log_ok   "GECKO GOCU TAMAMLANDI!"
-    log_info "Yedek: $BACKUP_DIR"
-    log_info "============================================"
+    log_ok "GECKO GOCU TAMAMLANDI! (v4)"
 }
 
 if [ -z "$SRC" ] || [ -z "$DST" ]; then
