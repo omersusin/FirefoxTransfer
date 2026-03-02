@@ -1,6 +1,6 @@
 #!/system/bin/sh
 # ============================================================
-#  common.sh v3 — stdout/stderr ayrımı düzeltildi
+#  common.sh v3 — stdout/stderr separation fixed
 # ============================================================
 
 WORK_DIR="/data/local/tmp/browser_migrator"
@@ -9,9 +9,9 @@ BACKUP_DIR=""
 SQLITE3_BIN=""
 
 # ============================================================
-#  LOG — HER ZAMAN stderr'e yaz (stdout'u kirletme)
-#  Kotlin tarafında 2>&1 ile birleştirildiği için
-#  kullanıcı her şeyi görür
+#  LOG — ALWAYS write to stderr (don't pollute stdout)
+#  Since it's merged with 2>&1 on the Kotlin side,
+#  the user sees everything.
 # ============================================================
 log_init() {
     mkdir -p "$WORK_DIR" 2>/dev/null
@@ -46,25 +46,25 @@ log_phase() {
 }
 
 # ============================================================
-#  PAKET VERİ DİZİNİNİ BUL
-#  /data/data symlink'i çalışmayabilir — birden fazla yol dene
+#  FIND PACKAGE DATA DIRECTORY
+#  /data/data symlink might not work — try multiple paths
 # ============================================================
 find_data_dir() {
     local pkg="$1"
 
-    # Yontem 1: /data/data (en yaygin)
+    # Method 1: /data/data (most common)
     if [ -d "/data/data/$pkg" ]; then
         echo "/data/data/$pkg"
         return 0
     fi
 
-    # Yontem 2: /data/user/0 (gercek yol)
+    # Method 2: /data/user/0 (real path)
     if [ -d "/data/user/0/$pkg" ]; then
         echo "/data/user/0/$pkg"
         return 0
     fi
 
-    # Yontem 3: dumpsys ile sor
+    # Method 3: Ask via dumpsys
     local dd
     dd=$(dumpsys package "$pkg" 2>/dev/null | grep "dataDir=" | head -1 | sed 's/.*dataDir=//' | tr -d ' \r')
     if [ -n "$dd" ] && [ -d "$dd" ]; then
@@ -72,14 +72,14 @@ find_data_dir() {
         return 0
     fi
 
-    # Yontem 4: pm ile sor
+    # Method 4: Ask via pm
     dd=$(pm dump "$pkg" 2>/dev/null | grep "dataDir=" | head -1 | sed 's/.*dataDir=//' | tr -d ' \r')
     if [ -n "$dd" ] && [ -d "$dd" ]; then
         echo "$dd"
         return 0
     fi
 
-    # Yontem 5: /data/user altinda ara
+    # Method 5: Search under /data/user
     for uid_dir in /data/user/*/; do
         if [ -d "${uid_dir}${pkg}" ]; then
             echo "${uid_dir}${pkg}"
@@ -96,10 +96,10 @@ find_data_dir() {
 # ============================================================
 check_root() {
     if [ "$(id -u)" -ne 0 ]; then
-        log_error "Root yetkisi gerekli!"
+        log_error "Root access required!"
         exit 1
     fi
-    log_ok "Root dogrulandi"
+    log_ok "Root verified"
 }
 
 # ============================================================
@@ -126,20 +126,20 @@ check_sqlite3() {
         return 0
     fi
 
-    log_warn "sqlite3 bulunamadi — SQLite yamalama atlanacak"
+    log_warn "sqlite3 not found — SQLite patching skipped"
     SQLITE3_BIN=""
     return 1
 }
 
 # ============================================================
-#  PAKET
+#  PACKAGE
 # ============================================================
 check_package() {
     if pm list packages 2>/dev/null | grep -q "package:${1}$"; then
-        log_ok "Paket mevcut: $1"
+        log_ok "Package exists: $1"
         return 0
     fi
-    log_error "Paket yok: $1"
+    log_error "Package missing: $1"
     return 1
 }
 
@@ -152,14 +152,14 @@ get_uid() {
 }
 
 stop_pkg() {
-    log_info "Durduruluyor: $1"
+    log_info "Stopping: $1"
     am force-stop "$1" 2>/dev/null
     sleep 1
-    log_ok "Durduruldu: $1"
+    log_ok "Stopped: $1"
 }
 
 # ============================================================
-#  DISK ALANI
+#  DISK SPACE
 # ============================================================
 check_disk() {
     local src_path="$1"
@@ -175,27 +175,27 @@ check_disk() {
     if [ -z "$avail_kb" ]; then return 0; fi
 
     local avail_mb=$((avail_kb / 1024))
-    log_info "Disk: ${avail_mb}MB mevcut, ${need_mb}MB gerekli"
+    log_info "Disk: ${avail_mb}MB available, ${need_mb}MB required"
 
     if [ "$avail_mb" -lt "$need_mb" ] 2>/dev/null; then
-        log_error "YETERSIZ DISK ALANI!"
+        log_error "INSUFFICIENT DISK SPACE!"
         exit 1
     fi
     return 0
 }
 
 # ============================================================
-#  KOPYALAMA
+#  COPYING
 # ============================================================
 safe_cp() {
     local src="$1" dst="$2" desc="$3"
 
     if [ ! -e "$src" ]; then
-        log_warn "Yok, atlaniyor: $desc"
+        log_warn "Missing, skipping: $desc"
         return 1
     fi
 
-    # yedek
+    # backup
     if [ -e "$dst" ] && [ -n "$BACKUP_DIR" ]; then
         local bk="${BACKUP_DIR}/$(echo "$dst" | tr '/' '_')"
         cp -rf "$dst" "$bk" 2>/dev/null
@@ -210,20 +210,20 @@ safe_cp() {
     fi
 
     if [ $? -eq 0 ]; then
-        log_ok "Kopyalandi: $desc"
+        log_ok "Copied: $desc"
     else
-        log_error "Kopyalama basarisiz: $desc"
+        log_error "Copy failed: $desc"
         return 1
     fi
 }
 
 # ============================================================
-#  İZİNLER
+#  PERMISSIONS
 # ============================================================
 fix_perms() {
     local path="$1" uid="$2"
     if [ -z "$uid" ] || [ ! -e "$path" ]; then
-        log_error "Izin duzeltilemedi: $path"
+        log_error "Failed to fix permissions: $path"
         return 1
     fi
     chown -R "${uid}:${uid}" "$path" 2>/dev/null
@@ -232,11 +232,11 @@ fix_perms() {
     if command -v restorecon >/dev/null 2>&1; then
         restorecon -RF "$path" 2>/dev/null
     fi
-    log_ok "Izinler duzeltildi: $path"
+    log_ok "Permissions fixed: $path"
 }
 
 # ============================================================
-#  YEDEK MANİFEST
+#  BACKUP MANIFEST
 # ============================================================
 save_manifest() {
     if [ -n "$BACKUP_DIR" ]; then
@@ -249,4 +249,4 @@ MFEOF
     fi
 }
 
-log_info "common.sh v3 yuklendi"
+log_info "common.sh v3 loaded"

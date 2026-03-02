@@ -1,9 +1,9 @@
 #!/system/bin/sh
 # ============================================================
-#  test_migration.sh — Göç Sonrası Doğrulama Scripti
+#  test_migration.sh — Post-Migration Validation Script
 # ============================================================
-# Kullanım: test_migration.sh <hedef_paket> <motor_tipi>
-# Örnek:    test_migration.sh org.mozilla.fenix GECKO
+# Usage: test_migration.sh <target_package> <engine_type>
+# Example: test_migration.sh org.mozilla.fenix GECKO
 # ============================================================
 
 DST_PKG="$1"
@@ -40,9 +40,9 @@ warn_check() {
 }
 
 echo "============================================"
-echo "  GÖÇ SONRASI DOĞRULAMA"
-echo "  Paket: $DST_PKG"
-echo "  Motor: $ENGINE"
+echo "  POST-MIGRATION VALIDATION"
+echo "  Package: $DST_PKG"
+echo "  Engine:  $ENGINE"
 echo "============================================"
 
 if [ "$ENGINE" = "GECKO" ]; then
@@ -50,35 +50,35 @@ if [ "$ENGINE" = "GECKO" ]; then
     PROFILE=$(find "$MOZILLA_DIR" -maxdepth 1 -type d -name "*.default*" 2>/dev/null | head -1)
 
     echo ""
-    echo "--- Profil Kontrolü ---"
-    check "Mozilla dizini mevcut" "[ -d '$MOZILLA_DIR' ]"
-    check "Profil dizini mevcut" "[ -n '$PROFILE' ] && [ -d '$PROFILE' ]"
+    echo "--- Profile Check ---"
+    check "Mozilla directory exists" "[ -d '$MOZILLA_DIR' ]"
+    check "Profile directory exists" "[ -n '$PROFILE' ] && [ -d '$PROFILE' ]"
 
     echo ""
-    echo "--- Çekirdek Veriler ---"
-    check "places.sqlite mevcut" "[ -f '$PROFILE/places.sqlite' ]"
-    check "places.sqlite boş değil" "[ -s '$PROFILE/places.sqlite' ]"
-    check "favicons.sqlite mevcut" "[ -f '$PROFILE/favicons.sqlite' ]"
+    echo "--- Core Data ---"
+    check "places.sqlite exists" "[ -f '$PROFILE/places.sqlite' ]"
+    check "places.sqlite not empty" "[ -s '$PROFILE/places.sqlite' ]"
+    check "favicons.sqlite exists" "[ -f '$PROFILE/favicons.sqlite' ]"
 
     echo ""
-    echo "--- Şifreler ---"
-    check "logins.json mevcut" "[ -f '$PROFILE/logins.json' ]"
-    check "key4.db mevcut" "[ -f '$PROFILE/key4.db' ]"
+    echo "--- Passwords ---"
+    check "logins.json exists" "[ -f '$PROFILE/logins.json' ]"
+    check "key4.db exists" "[ -f '$PROFILE/key4.db' ]"
 
     echo ""
-    echo "--- Eklentiler ---"
-    check "extensions/ dizini mevcut" "[ -d '$PROFILE/extensions' ]"
+    echo "--- Extensions ---"
+    check "extensions/ directory exists" "[ -d '$PROFILE/extensions' ]"
 
     echo ""
-    echo "--- Temizlik Kontrolü ---"
-    check "sessionstore.jsonlz4 SİLİNMİŞ" "[ ! -f '$PROFILE/sessionstore.jsonlz4' ]"
-    check "addonStartup.json.lz4 SİLİNMİŞ" "[ ! -f '$PROFILE/addonStartup.json.lz4' ]"
+    echo "--- Cleanup Check ---"
+    check "sessionstore.jsonlz4 DELETED" "[ ! -f '$PROFILE/sessionstore.jsonlz4' ]"
+    check "addonStartup.json.lz4 DELETED" "[ ! -f '$PROFILE/addonStartup.json.lz4' ]"
 
     echo ""
-    echo "--- Sahiplik Kontrolü ---"
+    echo "--- Ownership Check ---"
     EXPECTED_UID=$(stat -c '%u' "/data/data/$DST_PKG" 2>/dev/null)
     ACTUAL_UID=$(stat -c '%u' "$PROFILE/places.sqlite" 2>/dev/null)
-    check "Sahiplik doğru (uid=$EXPECTED_UID)" "[ '$EXPECTED_UID' = '$ACTUAL_UID' ]"
+    check "Ownership correct (uid=$EXPECTED_UID)" "[ '$EXPECTED_UID' = '$ACTUAL_UID' ]"
 
 elif [ "$ENGINE" = "CHROMIUM" ]; then
     BASE_DIR=""
@@ -92,29 +92,29 @@ elif [ "$ENGINE" = "CHROMIUM" ]; then
     PROFILE="${BASE_DIR}/Default"
 
     echo ""
-    echo "--- Profil Kontrolü ---"
-    check "Chromium base dizini mevcut" "[ -n '$BASE_DIR' ] && [ -d '$BASE_DIR' ]"
-    check "Default profil mevcut" "[ -d '$PROFILE' ]"
+    echo "--- Profile Check ---"
+    check "Chromium base directory exists" "[ -n '$BASE_DIR' ] && [ -d '$BASE_DIR' ]"
+    check "Default profile exists" "[ -d '$PROFILE' ]"
 
     echo ""
-    echo "--- Çekirdek Veriler ---"
-    check "Bookmarks mevcut" "[ -f '$PROFILE/Bookmarks' ]"
-    check "History mevcut" "[ -f '$PROFILE/History' ]"
+    echo "--- Core Data ---"
+    check "Bookmarks exists" "[ -f '$PROFILE/Bookmarks' ]"
+    check "History exists" "[ -f '$PROFILE/History' ]"
 
     echo ""
-    echo "--- Şifreler ---"
-    check "Login Data mevcut" "[ -f '$PROFILE/Login Data' ]"
+    echo "--- Passwords ---"
+    check "Login Data exists" "[ -f '$PROFILE/Login Data' ]"
 
     echo ""
-    echo "--- Sahiplik Kontrolü ---"
+    echo "--- Ownership Check ---"
     EXPECTED_UID=$(stat -c '%u' "/data/data/$DST_PKG" 2>/dev/null)
     ACTUAL_UID=$(stat -c '%u' "$PROFILE/History" 2>/dev/null)
-    check "Sahiplik doğru (uid=$EXPECTED_UID)" "[ '$EXPECTED_UID' = '$ACTUAL_UID' ]"
+    check "Ownership correct (uid=$EXPECTED_UID)" "[ '$EXPECTED_UID' = '$ACTUAL_UID' ]"
 fi
 
 echo ""
 echo "============================================"
-echo "  SONUÇ: $PASS geçti, $FAIL başarısız, $WARN uyarı"
+echo "  RESULT: $PASS passed, $FAIL failed, $WARN warning"
 echo "============================================"
 
 if [ $FAIL -gt 0 ]; then

@@ -1,7 +1,7 @@
 #!/system/bin/sh
 # ============================================================
 #  gecko_migrate.sh v5
-#  Fenix düzeltmesi: files/ altindaki DB'ler + sekmeler
+#  Fenix fix: DBs and tabs under files/
 # ============================================================
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 if [ -z "$SCRIPT_DIR" ]; then
@@ -16,17 +16,17 @@ G_PROFILE=""
 G_DATA_DIR=""
 
 # ============================================================
-#  VERİ DİZİNİ + PROFİL KEŞFİ
+#  DATA DIRECTORY + PROFILE DISCOVERY
 # ============================================================
 resolve_data_dir() {
     local pkg="$1"
     G_DATA_DIR=""
     G_DATA_DIR=$(find_data_dir "$pkg")
     if [ -z "$G_DATA_DIR" ]; then
-        log_error "Veri dizini bulunamadi: $pkg"
+        log_error "Data directory not found: $pkg"
         return 1
     fi
-    log_ok "Veri dizini: $G_DATA_DIR"
+    log_ok "Data directory: $G_DATA_DIR"
     return 0
 }
 
@@ -40,24 +40,24 @@ find_gecko_profile() {
     local dd="$G_DATA_DIR"
 
     # Debug
-    log_info "--- $dd/files/ icerigi ---"
+    log_info "--- $dd/files/ content ---"
     if [ -d "$dd/files" ]; then
         ls -la "$dd/files/" 2>/dev/null | while IFS= read -r line; do
             log_info "  $line"
         done
     fi
 
-    # 1. files/mozilla/ altinda profil ara
+    # 1. Search for profile under files/mozilla/
     local mozilla_dir="$dd/files/mozilla"
     if [ -d "$mozilla_dir" ]; then
-        log_info "files/mozilla/ bulundu"
+        log_info "files/mozilla/ found"
 
         if [ -f "$mozilla_dir/profiles.ini" ]; then
             local ini_path
             ini_path=$(grep "^Path=" "$mozilla_dir/profiles.ini" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '\r\n ')
             if [ -n "$ini_path" ] && [ -d "$mozilla_dir/$ini_path" ]; then
                 G_PROFILE="$mozilla_dir/$ini_path"
-                log_ok "Profil (profiles.ini): $G_PROFILE"
+                log_ok "Profile (profiles.ini): $G_PROFILE"
                 return 0
             fi
         fi
@@ -68,7 +68,7 @@ find_gecko_profile() {
             case "$dname" in
                 *.default*|*.svc*|*.release*|*.nightly*)
                     G_PROFILE="${d%/}"
-                    log_ok "Profil (glob): $G_PROFILE"
+                    log_ok "Profile (glob): $G_PROFILE"
                     return 0
                     ;;
             esac
@@ -77,24 +77,24 @@ find_gecko_profile() {
         for d in "$mozilla_dir"/*/; do
             if [ -d "$d" ]; then
                 G_PROFILE="${d%/}"
-                log_warn "Profil (ilk dizin): $G_PROFILE"
+                log_warn "Profile (first directory): $G_PROFILE"
                 return 0
             fi
         done
     fi
 
-    # 2. Genis arama
+    # 2. Broad search
     if [ -d "$dd/files" ]; then
         local found
         found=$(find "$dd/files" -name "places.sqlite" -type f 2>/dev/null | head -1)
         if [ -n "$found" ]; then
             G_PROFILE=$(dirname "$found")
-            log_ok "Profil (find): $G_PROFILE"
+            log_ok "Profile (find): $G_PROFILE"
             return 0
         fi
     fi
 
-    log_error "PROFIL BULUNAMADI: $pkg"
+    log_error "PROFILE NOT FOUND: $pkg"
     return 1
 }
 
@@ -103,11 +103,11 @@ ensure_dst_profile() {
 
     find_gecko_profile "$pkg"
     if [ -n "$G_PROFILE" ]; then
-        log_ok "Hedef profil mevcut: $G_PROFILE"
+        log_ok "Target profile exists: $G_PROFILE"
         return 0
     fi
 
-    log_info "Hedef profil yok, tarayici baslatiliyor..."
+    log_info "Target profile missing, starting browser..."
     local intent=$(cmd package resolve-activity --brief "$pkg" 2>/dev/null | tail -1)
     if [ -n "$intent" ]; then
         am start -n "$intent" >/dev/null 2>&1
@@ -120,24 +120,24 @@ ensure_dst_profile() {
 
     find_gecko_profile "$pkg"
     if [ -n "$G_PROFILE" ]; then
-        log_ok "Temiz profil olusturuldu: $G_PROFILE"
+        log_ok "Clean profile created: $G_PROFILE"
         return 0
     fi
 
-    log_error "Profil olusturulamadi: $pkg"
+    log_error "Could not create profile: $pkg"
     return 1
 }
 
 # ============================================================
-#  ANA AKIS
+#  MAIN FLOW
 # ============================================================
 main() {
     log_init
 
     log_info "============================================"
-    log_info "  Gecko Goc v5 (Fenix uyumlu)"
-    log_info "  Kaynak: $SRC"
-    log_info "  Hedef:  $DST"
+    log_info "  Gecko Migration v5 (Fenix compatible)"
+    log_info "  Source: $SRC"
+    log_info "  Target: $DST"
     log_info "============================================"
 
     check_root
@@ -148,8 +148,8 @@ main() {
     stop_pkg "$SRC"
     stop_pkg "$DST"
 
-    # ==== FAZA 0: Kesif ====
-    log_info "FAZA 0: KESIF"
+    # ==== PHASE 0: Discovery ====
+    log_info "PHASE 0: DISCOVERY"
 
     find_gecko_profile "$SRC"
     local src_profile="$G_PROFILE"
@@ -157,17 +157,17 @@ main() {
     local src_files="$src_dd/files"
 
     if [ -z "$src_profile" ]; then
-        log_error "KAYNAK PROFIL BULUNAMADI!"
+        log_error "SOURCE PROFILE NOT FOUND!"
         exit 1
     fi
-    log_ok "Kaynak profil: $src_profile"
-    log_ok "Kaynak files: $src_files"
+    log_ok "Source profile: $src_profile"
+    log_ok "Source files: $src_files"
     local src_name=$(basename "$src_profile")
 
     check_disk "$src_files"
 
-    # ==== FAZA 1: HEDEF PROFIL ====
-    log_info "FAZA 1: HEDEF PROFIL"
+    # ==== PHASE 1: Target Profile ====
+    log_info "PHASE 1: TARGET PROFILE"
 
     ensure_dst_profile "$DST"
     local dst_profile="$G_PROFILE"
@@ -175,77 +175,77 @@ main() {
     local dst_files="$dst_dd/files"
 
     if [ -z "$dst_profile" ]; then
-        log_error "HEDEF PROFIL HAZIRLANAMAADI!"
+        log_error "TARGET PROFILE NOT READY!"
         exit 1
     fi
-    log_ok "Hedef profil: $dst_profile"
-    log_ok "Hedef files: $dst_files"
+    log_ok "Target profile: $dst_profile"
+    log_ok "Target files: $dst_files"
     local dst_name=$(basename "$dst_profile")
 
-    # Yedek
-    log_info "Hedef yedekleniyor..."
+    # Backup
+    log_info "Backing up target..."
     mkdir -p "${BACKUP_DIR}/target_files" 2>/dev/null
     cp -rf "$dst_files/." "${BACKUP_DIR}/target_files/" 2>/dev/null
     save_manifest "$DST" "GECKO" "$dst_profile"
-    log_ok "Yedek: $BACKUP_DIR"
+    log_ok "Backup: $BACKUP_DIR"
 
     stop_pkg "$DST"
     sleep 1
 
-    # ==== FAZA 2: Fenix files/ Seviyesi DB'ler ====
-    log_info "FAZA 2: FILES-SEVIYESI VERILER"
+    # ==== PHASE 2: Fenix files/ Level DBs ====
+    log_info "PHASE 2: FILES-LEVEL DATA"
 
-    # --- places.sqlite (Gecmis + Yer Imleri) ---
+    # --- places.sqlite (History + Bookmarks) ---
     if [ -f "${src_files}/places.sqlite" ]; then
-        log_info "places.sqlite files/ altinda (Fenix)"
+        log_info "places.sqlite in files/ (Fenix)"
         safe_cp "${src_files}/places.sqlite"     "${dst_files}/places.sqlite"     "places.sqlite (files/)"
         safe_cp "${src_files}/places.sqlite-wal"  "${dst_files}/places.sqlite-wal"  "places.sqlite-wal (files/)"
         safe_cp "${src_files}/places.sqlite-shm"  "${dst_files}/places.sqlite-shm"  "places.sqlite-shm (files/)"
     elif [ -f "${src_profile}/places.sqlite" ]; then
-        log_info "places.sqlite profil altinda (klasik)"
-        safe_cp "${src_profile}/places.sqlite"     "${dst_profile}/places.sqlite"     "places.sqlite (profil)"
-        safe_cp "${src_profile}/places.sqlite-wal"  "${dst_profile}/places.sqlite-wal"  "places.sqlite-wal (profil)"
-        safe_cp "${src_profile}/places.sqlite-shm"  "${dst_profile}/places.sqlite-shm"  "places.sqlite-shm (profil)"
+        log_info "places.sqlite in profile (classic)"
+        safe_cp "${src_profile}/places.sqlite"     "${dst_profile}/places.sqlite"     "places.sqlite (profile)"
+        safe_cp "${src_profile}/places.sqlite-wal"  "${dst_profile}/places.sqlite-wal"  "places.sqlite-wal (profile)"
+        safe_cp "${src_profile}/places.sqlite-shm"  "${dst_profile}/places.sqlite-shm"  "places.sqlite-shm (profile)"
     fi
 
-    # --- logins.json + key4.db (Sifreler) ---
+    # --- logins.json + key4.db (Passwords) ---
     if [ -f "${src_files}/logins.json" ]; then
         safe_cp "${src_files}/logins.json" "${dst_files}/logins.json" "logins.json (files/)"
     elif [ -f "${src_profile}/logins.json" ]; then
-        safe_cp "${src_profile}/logins.json" "${dst_profile}/logins.json" "logins.json (profil)"
+        safe_cp "${src_profile}/logins.json" "${dst_profile}/logins.json" "logins.json (profile)"
     fi
 
     if [ -f "${src_files}/key4.db" ]; then
         safe_cp "${src_files}/key4.db" "${dst_files}/key4.db" "key4.db (files/)"
     elif [ -f "${src_profile}/key4.db" ]; then
-        safe_cp "${src_profile}/key4.db" "${dst_profile}/key4.db" "key4.db (profil)"
+        safe_cp "${src_profile}/key4.db" "${dst_profile}/key4.db" "key4.db (profile)"
     fi
 
-    # --- tabs.sqlite (Sekmeler) ---
+    # --- tabs.sqlite (Tabs) ---
     if [ -f "${src_files}/tabs.sqlite" ]; then
         safe_cp "${src_files}/tabs.sqlite"     "${dst_files}/tabs.sqlite"     "tabs.sqlite"
         safe_cp "${src_files}/tabs.sqlite-wal"  "${dst_files}/tabs.sqlite-wal"  "tabs.sqlite-wal"
         safe_cp "${src_files}/tabs.sqlite-shm"  "${dst_files}/tabs.sqlite-shm"  "tabs.sqlite-shm"
     fi
 
-    # --- Session verisi (Fenix sekme durumu) ---
-    # KOPYALANMAZ — Fenix/Iceraven surumleri arasi JSON format farki
-    # crash yaratir. tabs.sqlite sekme verilerini zaten tasiyor.
-    # Hedef tarayici ilk acilista tabs.sqlite'dan session'i yeniden olusturur.
+    # --- Session data (Fenix tab state) ---
+    # SKIPPED — Fenix/Iceraven version incompatibility in JSON format
+    # causes crashes. tabs.sqlite already carries tab data.
+    # Target browser recreates session from tabs.sqlite on first launch.
     if [ -f "${src_files}/mozilla_components_session_storage_gecko.json" ]; then
-        log_warn "Session JSON atlanıyor (format uyumsuzlugu onlemi)"
+        log_warn "Session JSON skipped (version incompatibility prevention)"
     fi
 
     # --- push.sqlite ---
     safe_cp "${src_files}/push.sqlite" "${dst_files}/push.sqlite" "push.sqlite"
 
-    # --- Diger files-seviyesi dosyalar ---
+    # --- Other files-level files ---
     for f in "nimbus_messages_metadata.json" "profileInstalled" "mozilla_components_service_mars_tiles.json"; do
         safe_cp "${src_files}/${f}" "${dst_files}/${f}" "$f"
     done
 
-    # ==== FAZA 3: Profil-Seviyesi Veriler ====
-    log_info "FAZA 3: PROFIL-SEVIYESI VERILER"
+    # ==== PHASE 3: Profile-Level Data ====
+    log_info "PHASE 3: PROFILE-LEVEL DATA"
 
     for f in \
         favicons.sqlite favicons.sqlite-wal favicons.sqlite-shm \
@@ -259,8 +259,8 @@ main() {
         fi
     done
 
-    # ==== FAZA 4: Eklentiler ====
-    log_info "FAZA 4: EKLENTI GOCU"
+    # ==== PHASE 4: Extensions ====
+    log_info "PHASE 4: EXTENSION MIGRATION"
 
     safe_cp "${src_profile}/extensions" "${dst_profile}/extensions" "extensions/"
     safe_cp "${src_profile}/extensions.json" "${dst_profile}/extensions.json" "extensions.json"
@@ -268,23 +268,23 @@ main() {
     safe_cp "${src_profile}/browser-extension-data" "${dst_profile}/browser-extension-data" "browser-extension-data/"
 
     if [ -f "${src_profile}/storage-sync-v2.sqlite" ]; then
-        safe_cp "${src_profile}/storage-sync-v2.sqlite" "${dst_profile}/storage-sync-v2.sqlite" "storage-sync (profil)"
+        safe_cp "${src_profile}/storage-sync-v2.sqlite" "${dst_profile}/storage-sync-v2.sqlite" "storage-sync (profile)"
     fi
     if [ -f "${src_files}/storage-sync-v2.sqlite" ]; then
         safe_cp "${src_files}/storage-sync-v2.sqlite" "${dst_files}/storage-sync-v2.sqlite" "storage-sync (files/)"
     fi
 
-    # extensions.json yol yamalama
+    # extensions.json path patching
     if [ -f "${dst_profile}/extensions.json" ]; then
-        log_info "extensions.json yollari yamalaniyor..."
+        log_info "Patching extensions.json paths..."
         sed -i "s|${src_dd}/files/mozilla/${src_name}|${dst_dd}/files/mozilla/${dst_name}|g" "${dst_profile}/extensions.json" 2>/dev/null
         sed -i "s|${src_dd}/|${dst_dd}/|g" "${dst_profile}/extensions.json" 2>/dev/null
         sed -i "s|${SRC}|${DST}|g" "${dst_profile}/extensions.json" 2>/dev/null
-        log_ok "extensions.json yamalandi"
+        log_ok "extensions.json patched"
     fi
 
-    # UUID senkronizasyonu
-    log_info "UUID senkronizasyonu..."
+    # UUID synchronization
+    log_info "UUID synchronization..."
     local src_prefs="${src_profile}/prefs.js"
     local dst_prefs="${dst_profile}/prefs.js"
     if [ -f "$src_prefs" ]; then
@@ -311,11 +311,11 @@ main() {
                 ext_count=$((ext_count + 1))
             fi
         done
-        log_ok "Eklenti depolari: $ext_count"
+        log_ok "Extension stores: $ext_count"
     fi
 
-    # ==== FAZA 5: Firefox Hesabi / Sync ====
-    log_info "FAZA 5: FIREFOX HESABI VE SYNC"
+    # ==== PHASE 5: Firefox Account / Sync ====
+    log_info "PHASE 5: FIREFOX ACCOUNT AND SYNC"
 
     local src_sp="${src_dd}/shared_prefs"
     local dst_sp="${dst_dd}/shared_prefs"
@@ -332,8 +332,8 @@ main() {
     safe_cp "${src_files}/datastore" "${dst_files}/datastore" "datastore/"
     safe_cp "${src_files}/mozac.feature.recentlyclosed" "${dst_files}/mozac.feature.recentlyclosed" "recently closed"
 
-    # ==== FAZA 6: Paket Adi Yamalama ====
-    log_info "FAZA 6: PAKET ADI YAMALAMA"
+    # ==== PHASE 6: Package Name Patching ====
+    log_info "PHASE 6: PACKAGE NAME PATCHING"
     if [ -d "$dst_sp" ] && [ "$SRC" != "$DST" ]; then
         for f in "$dst_sp"/*.xml; do
             [ ! -f "$f" ] && continue
@@ -343,8 +343,8 @@ main() {
         done
     fi
 
-    # ==== FAZA 7: Temizlik ====
-    log_info "FAZA 7: TEMIZLIK"
+    # ==== PHASE 7: Cleanup ====
+    log_info "PHASE 7: CLEANUP"
     rm -f  "${dst_profile}/addonStartup.json.lz4" 2>/dev/null
     rm -rf "${dst_profile}/startupCache" 2>/dev/null
     rm -f  "${dst_profile}/compatibility.ini" 2>/dev/null
@@ -360,11 +360,11 @@ main() {
     fi
 
     stop_pkg "$DST"
-    log_ok "GECKO GOCU TAMAMLANDI! (v5)"
+    log_ok "GECKO MIGRATION COMPLETED! (v5)"
 }
 
 if [ -z "$SRC" ] || [ -z "$DST" ]; then
-    echo "Kullanim: $0 <kaynak> <hedef>" >&2
+    echo "Usage: $0 <source> <target>" >&2
     exit 1
 fi
 

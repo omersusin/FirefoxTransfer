@@ -1,74 +1,49 @@
-# 🌐 Browser Data Migrator
+# Browser Data Migrator (v3)
+============================================================
 
-Root yetkisi kullanarak Android tarayıcıları arasında
-**tüm verileri** (yer imleri, şifreler, geçmiş, eklentiler)
-eksiksiz taşıyan açık kaynak araç.
+Open-source tool that migrates **all data** (bookmarks, passwords, history, extensions) between Android browsers using root access.
 
-## ✨ Desteklenen Motorlar
-
-| Motor    | Tarayıcılar                                      |
+| Engine   | Browsers                                         |
 |----------|--------------------------------------------------|
-| 🦎 Gecko | Firefox, Fennec, Mull, Iceraven, Tor Browser     |
-| ⚡ Chromium | Chrome, Brave, Kiwi, Vivaldi, Edge, Opera, Samsung |
+| **Gecko**| Firefox, Mull, Iceraven, Fennec, Tor, Focus      |
+| **Chromium** | Chrome, Brave, Kiwi, Vivaldi, Opera, Edge, Samsung |
 
-## 📦 Taşınan Veriler
+## 📦 Migrated Data
+| Data Type      | Gecko | Chromium | Notes                            |
+|----------------|-------|----------|----------------------------------|
+| Bookmarks      | ✅    | ✅       |                                  |
+| History        | ✅    | ✅       |                                  |
+| Passwords      | ✅    | ⚠️       | Chromium: Keystore dependent     |
+| Cookies        | ✅    | ✅       |                                  |
+| Extensions     | ✅    | ✅       | Within same engine family        |
+| Site Permissions| ✅    | ✅       |                                  |
+| Tabs           | ❌    | ❌       | Intentional: crash prevention    |
 
-| Veri Tipi      | Gecko | Chromium | Not                              |
-|----------------|:-----:|:--------:|----------------------------------|
-| Yer İmleri     | ✅    | ✅       |                                  |
-| Geçmiş         | ✅    | ✅       |                                  |
-| Şifreler       | ✅    | ⚠️       | Chromium: Keystore bağımlı       |
-| Çerezler       | ✅    | ✅       |                                  |
-| Eklentiler     | ✅    | ✅       | Aynı motor ailesi içinde         |
-| Form Verisi    | ✅    | ✅       |                                  |
-| Site İzinleri  | ✅    | ✅       |                                  |
-| Sertifikalar   | ✅    | —        |                                  |
-| Sekmeler       | ❌    | ❌       | Kasıtlı: çökme önlemi           |
+## 🛠 Prerequisites
+- **Root access** (Magisk / KernelSU / SuperSU)
+- ~100MB free storage
 
-## ⚙️ Gereksinimler
+## 🚀 Usage
+1. Install and open the APK.
+2. Grant Root permission.
+3. Select Source browser (where data is coming from).
+4. Select Target browser (where data will be written).
+5. Press "START MIGRATION".
+6. Once finished, open the target browser and verify.
 
-- **Root erişimi** (Magisk / KernelSU / SuperSU)
-- Android 7.0+ (API 24)
-- ~100MB boş depolama
+## ⚠️ Known Limitations
+- **Chromium Passwords**: Moving between different package UIDs may cause password decryption issues as the Android Keystore keys change. No issues when reinstalling the same package.
+- **Cross-engine**: Extensions cannot be moved between Gecko → Chromium or vice-versa due to different database schemas.
+- **Tabs**: Intentionally not migrated due to format incompatibilities. This prevents the target browser from crashing.
 
-## 🚀 Kullanım
+## 🔒 Security
+- Package names are validated with regex (shell injection prevention).
+- All temporary files are kept under `/data/local/tmp`.
+- Backups are written to root-only areas, not the SD card.
+- JSON patching is done with base64/temp-file (no heredoc vulnerabilities).
+- SELinux contexts are fixed with `restorecon`.
 
-1. APK'yı yükleyin ve açın
-2. Root izni verin
-3. Kaynak tarayıcıyı seçin (veriler buradan alınacak)
-4. Hedef tarayıcıyı seçin (veriler buraya yazılacak)
-5. "GÖÇÜ BAŞLAT" butonuna basın
-6. İşlem tamamlanınca hedef tarayıcıyı açıp doğrulayın
-
-## ⚠️ Bilinen Sınırlamalar
-
-- **Chromium şifreleri**: Farklı UID'ler arası taşımada
-  Android Keystore anahtarları değiştiği için şifreler
-  çözülemeyebilir. Aynı paket yeniden kurulumunda sorun yoktur.
-
-- **Çapraz motor**: Gecko → Chromium veya tersi taşımada
-  veritabanı şemaları farklı olduğu için eklentiler taşınamaz.
-
-- **Sekmeler**: Format uyumsuzlukları nedeniyle kasıtlı olarak
-  taşınmaz. Bu, hedef tarayıcının çökmesini önler.
-
-## 🏗️ Derleme
-
+## ⚙️ Build
 ```bash
-git clone https://github.com/user/BrowserMigrator.git
-cd BrowserMigrator
-./gradlew assembleDebug
-# APK: app/build/outputs/apk/debug/
+./gradlew assembleRelease
 ```
-
-## 🔒 Güvenlik
-
-- Paket adları regex ile doğrulanır (shell injection önlemi)
-- Tüm geçici dosyalar `/data/local/tmp` altında tutulur
-- Yedekler SD karta değil root-only alana yazılır
-- JSON yamalama base64/temp-file ile yapılır (heredoc açığı yok)
-- SELinux bağlamları `restorecon` ile düzeltilir
-
-## 📄 Lisans
-
-MIT License

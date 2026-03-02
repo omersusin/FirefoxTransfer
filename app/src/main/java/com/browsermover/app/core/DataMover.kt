@@ -81,16 +81,16 @@ class DataMover(private val context: Context) {
     ): MigrationResult = withContext(Dispatchers.IO) {
 
         try {
-            PackageValidator.validateOrThrow(sourcePkg, "Kaynak")
-            PackageValidator.validateOrThrow(targetPkg, "Hedef")
-            
+            PackageValidator.validateOrThrow(sourcePkg, "Source")
+            PackageValidator.validateOrThrow(targetPkg, "Target")
+
             if (sourcePkg == targetPkg) {
-                return@withContext MigrationResult.Failure("Kaynak ve hedef ayni olamaz!")
+                return@withContext MigrationResult.Failure("Source and target cannot be the same!")
             }
 
-            emitProgress(onProgress, 0, "Hazirlik", "Scriptler cikariliyor...", 3)
+            emitProgress(onProgress, 0, "Preparation", "Extracting scripts...", 3)
             if (!extractScripts()) {
-                return@withContext MigrationResult.Failure("Script cikarma basarisiz!")
+                return@withContext MigrationResult.Failure("Script extraction failed!")
             }
 
             extractSqlite3Binary()
@@ -101,17 +101,16 @@ class DataMover(private val context: Context) {
             val engine = when {
                 srcEngine != BrowserType.UNKNOWN -> srcEngine
                 dstEngine != BrowserType.UNKNOWN -> dstEngine
-                else -> return@withContext MigrationResult.Failure("Motor tipi belirlenemedi!")
+                else -> return@withContext MigrationResult.Failure("Could not determine engine type!")
             }
 
             val scriptName = when (engine) {
                 BrowserType.GECKO -> "gecko_migrate.sh"
                 BrowserType.CHROMIUM -> "chromium_migrate.sh"
-                else -> return@withContext MigrationResult.Failure("Motor secilemedi")
+                else -> return@withContext MigrationResult.Failure("Engine selection failed")
             }
 
-            emitProgress(onProgress, 0, "Baslatiliyor", "Motor: ${engine.name}", 8)
-
+            emitProgress(onProgress, 0, "Initializing", "Engine: ${engine.name}", 8)
             val logLines = mutableListOf<String>()
             val warnings = mutableListOf<String>()
             val errors = mutableListOf<String>()
@@ -123,7 +122,7 @@ class DataMover(private val context: Context) {
                 args = listOf(sourcePkg, targetPkg)
             ) { line ->
                 logLines.add(line)
-                val phaseMatch = Regex("""FAZA\s+(\d+):\s*(.*)""").find(line)
+                val phaseMatch = Regex("""PHASE\s+(\d+):\s*(.*)""").find(line)
                 if (phaseMatch != null) {
                     phase = phaseMatch.groupValues[1].toIntOrNull() ?: phase
                     phaseName = phaseMatch.groupValues[2].trim()
@@ -142,7 +141,7 @@ class DataMover(private val context: Context) {
             buildResult(exitCode, errors, warnings, logLines)
 
         } catch (e: Exception) {
-            MigrationResult.Failure("Hata: ${e.message}", e.stackTraceToString().take(1000), LOG_FILE)
+            MigrationResult.Failure("Error: ${e.message}", e.stackTraceToString().take(1000), LOG_FILE)
         }
     }
 
@@ -258,5 +257,5 @@ class DataMover(private val context: Context) {
 
     private fun progressPct(p: Int, e: BrowserType) = if (e == BrowserType.GECKO) intArrayOf(12,22,45,70,85,92).getOrElse(p){92} else intArrayOf(8,22,38,52,62,75,85,92).getOrElse(p){95}
     private suspend fun emitProgress(cb: suspend (MigrationResult.Progress) -> Unit, ph: Int, nm: String, d: String, pct: Int) = withContext(Dispatchers.Main) { cb(MigrationResult.Progress(ph, nm, d, pct)) }
-    private fun buildResult(exit: Int, errs: List<String>, warns: List<String>, lines: List<String>) = if (exit == 0) MigrationResult.Success("Goc basarili!", warns, LOG_FILE) else MigrationResult.Failure("Basarisiz (exit=$exit)", lines.takeLast(10).joinToString("\n"), LOG_FILE)
+    private fun buildResult(exit: Int, errs: List<String>, warns: List<String>, lines: List<String>) = if (exit == 0) MigrationResult.Success("Migration successful!", warns, LOG_FILE) else MigrationResult.Failure("Failed (exit=$exit)", lines.takeLast(10).joinToString("\n"), LOG_FILE)
 }

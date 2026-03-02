@@ -21,9 +21,9 @@ data class CommandResult(
 object RootHelper {
 
     /**
-     * DÜZELTME: Mount namespace izolasyonu bypass
-     * Android'de su shell'i uygulamanın mount namespace'inde çalışır.
-     * nsenter -t 1 -m: PID 1'in (init) mount namespace'ine girer.
+     * FIX: Mount namespace isolation bypass
+     * On Android, su shell runs in the app's mount namespace.
+     * nsenter -t 1 -m: Enters PID 1's (init) mount namespace.
      */
     private const val ENTER_GLOBAL_NS =
         "command -v nsenter >/dev/null 2>&1 && exec nsenter -t 1 -m -- /system/bin/sh"
@@ -50,7 +50,7 @@ object RootHelper {
             val process = Runtime.getRuntime().exec("su")
             val os = DataOutputStream(process.outputStream)
 
-            // Global namespace'e geç
+            // Switch to global namespace
             os.writeBytes("$ENTER_GLOBAL_NS\n")
 
             os.writeBytes("$command\n")
@@ -94,7 +94,7 @@ object RootHelper {
                 val process = Runtime.getRuntime().exec("su")
                 val os = DataOutputStream(process.outputStream)
 
-                // Global namespace'e geç
+                // Switch to global namespace
                 os.writeBytes("$ENTER_GLOBAL_NS\n")
 
                 for (cmd in commands) {
@@ -142,7 +142,7 @@ object RootHelper {
             val process = Runtime.getRuntime().exec("su")
             val os = DataOutputStream(process.outputStream)
 
-            // Global namespace'e geç
+            // Switch to global namespace
             os.writeBytes("$ENTER_GLOBAL_NS\n")
 
             val fullCommand = buildString {

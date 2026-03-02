@@ -1,8 +1,8 @@
 package com.browsermover.app.core
 
 /**
- * Android paket adı doğrulayıcı.
- * Shell injection saldırılarını önler.
+ * Android package name validator.
+ * Prevents shell injection attacks.
  */
 object PackageValidator {
 
@@ -23,11 +23,11 @@ object PackageValidator {
         return true
     }
 
-    fun validateOrThrow(pkg: String, label: String = "Paket") {
+    fun validateOrThrow(pkg: String, label: String = "Package") {
         if (!isValid(pkg)) {
             throw IllegalArgumentException(
-                "$label adı geçersiz veya güvensiz: '$pkg'. " +
-                "Sadece harf, rakam, nokta ve alt çizgi içermeli."
+                "$label name is invalid or unsafe: '$pkg'. " +
+                "Should only contain letters, digits, dots and underscores."
             )
         }
     }

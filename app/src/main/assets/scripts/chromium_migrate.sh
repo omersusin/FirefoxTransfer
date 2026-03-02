@@ -15,7 +15,7 @@ G_BASE=""
 G_PROFILE=""
 
 # ============================================================
-#  DİZİN KEŞFİ
+#  DIRECTORY DISCOVERY
 # ============================================================
 find_chromium_base() {
     local pkg="$1"
@@ -24,7 +24,7 @@ find_chromium_base() {
     local dd
     dd=$(find_data_dir "$pkg")
     if [ -z "$dd" ]; then
-        log_error "Veri dizini bulunamadi: $pkg"
+        log_error "Data directory not found: $pkg"
         return 1
     fi
 
@@ -36,17 +36,17 @@ find_chromium_base() {
         fi
     done
 
-    # Genis arama: Bookmarks veya History dosyasi ara
+    # Broad search: Look for Bookmarks or History files
     local found
     found=$(find "$dd" -name "Bookmarks" -type f 2>/dev/null | head -1)
     if [ -n "$found" ]; then
         G_BASE=$(dirname "$(dirname "$found")")
-        log_ok "Chromium base (arama): $G_BASE"
+        log_ok "Chromium base (search): $G_BASE"
         return 0
     fi
 
-    log_error "Chromium base bulunamadi: $pkg"
-    log_info "--- Dizin icerigi ---"
+    log_error "Chromium base not found: $pkg"
+    log_info "--- Directory content ---"
     ls -la "$dd/" 2>/dev/null | while IFS= read -r l; do log_info "  $l"; done
     return 1
 }
@@ -90,13 +90,13 @@ ensure_chromium_profile() {
         fi
     fi
 
-    log_info "Hedef profil yok, tarayici baslatiliyor..."
+    log_info "Target profile missing, starting browser..."
     local intent
     intent=$(cmd package resolve-activity --brief "$pkg" 2>/dev/null | tail -1)
     if [ -n "$intent" ]; then
         am start -n "$intent" >/dev/null 2>&1
     else
-        log_info "monkey ile baslatiliyor"
+        log_info "Starting with monkey"
         monkey -p "$pkg" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
     fi
     sleep 10
@@ -105,7 +105,7 @@ ensure_chromium_profile() {
 
     find_chromium_base "$pkg"
     if [ -z "$G_BASE" ]; then
-        log_error "Chromium base hala bulunamadi: $pkg"
+        log_error "Chromium base still not found: $pkg"
         G_PROFILE=""
         return 1
     fi
@@ -114,15 +114,15 @@ ensure_chromium_profile() {
 }
 
 # ============================================================
-#  ANA AKIS
+#  MAIN FLOW
 # ============================================================
 main() {
     log_init
 
     log_info "============================================"
-    log_info "  Chromium Goc v3"
-    log_info "  Kaynak: $SRC"
-    log_info "  Hedef:  $DST"
+    log_info "  Chromium Migration v3"
+    log_info "  Source: $SRC"
+    log_info "  Target: $DST"
     log_info "============================================"
 
     check_root
@@ -133,8 +133,8 @@ main() {
     stop_pkg "$SRC"
     stop_pkg "$DST"
 
-    # ---- FAZA 0 ----
-    log_info "FAZA 0: KESIF"
+    # ---- PHASE 0 ----
+    log_info "PHASE 0: DISCOVERY"
 
     find_chromium_base "$SRC"
     local src_base="$G_BASE"
@@ -143,10 +143,10 @@ main() {
     find_chromium_profile "$src_base"
     local src_profile="$G_PROFILE"
     if [ -z "$src_profile" ]; then
-        log_error "Kaynak profil bulunamadi!"
+        log_error "Source profile not found!"
         exit 1
     fi
-    log_ok "Kaynak profil: $src_profile"
+    log_ok "Source profile: $src_profile"
 
     check_disk "$src_profile"
 
@@ -155,12 +155,12 @@ main() {
     local dst_base="$G_BASE"
 
     if [ -z "$dst_profile" ] || [ -z "$dst_base" ]; then
-        log_error "Hedef hazirlanamaadi!"
+        log_error "Target preparation failed!"
         exit 1
     fi
-    log_ok "Hedef profil: $dst_profile"
+    log_ok "Target profile: $dst_profile"
 
-    # Yedek
+    # Backup
     mkdir -p "${BACKUP_DIR}/target_original_profile" 2>/dev/null
     cp -rf "$dst_profile/." "${BACKUP_DIR}/target_original_profile/" 2>/dev/null
     save_manifest "$DST" "CHROMIUM" "$dst_profile"
@@ -168,8 +168,8 @@ main() {
     stop_pkg "$DST"
     sleep 1
 
-    # ---- FAZA 1 ----
-    log_info "FAZA 1: VERITABANI GOCU"
+    # ---- PHASE 1 ----
+    log_info "PHASE 1: DATABASE MIGRATION"
 
     safe_cp "${src_profile}/Preferences" "${dst_profile}/Preferences" "Preferences"
     safe_cp "${src_profile}/Secure Preferences" "${dst_profile}/Secure Preferences" "Secure Preferences"
@@ -185,8 +185,8 @@ main() {
         done
     done
 
-    # ---- FAZA 2 ----
-    log_info "FAZA 2: EKLENTI GOCU"
+    # ---- PHASE 2 ----
+    log_info "PHASE 2: EXTENSION MIGRATION"
 
     safe_cp "${src_profile}/Extensions" "${dst_profile}/Extensions" "Extensions/"
     safe_cp "${src_profile}/Local Extension Settings" "${dst_profile}/Local Extension Settings" "Local Extension Settings/"
@@ -201,8 +201,8 @@ main() {
         done
     fi
 
-    # ---- FAZA 3 ----
-    log_info "FAZA 3: JSON YAMALAMA"
+    # ---- PHASE 3 ----
+    log_info "PHASE 3: JSON PATCHING"
 
     local src_bn dst_bn
     src_bn=$(basename "$src_base")
@@ -221,18 +221,18 @@ main() {
             if [ "$src_bn" != "$dst_bn" ]; then
                 sed -i "s|${src_bn}|${dst_bn}|g" "$jf" 2>/dev/null
             fi
-            log_ok "Yamalandi: $(basename "$jf")"
+            log_ok "Patched: $(basename "$jf")"
         fi
     done
 
     if [ -f "${dst_profile}/Secure Preferences" ]; then
         sed -i '/"super_mac"/d' "${dst_profile}/Secure Preferences" 2>/dev/null
         sed -i 's/"mac":"[^"]*"/"mac":""/g' "${dst_profile}/Secure Preferences" 2>/dev/null
-        log_ok "Secure Prefs HMAC temizlendi"
+        log_ok "Secure Prefs HMAC cleaned"
     fi
 
-    # ---- FAZA 4 ----
-    log_info "FAZA 4: SQLite YAMALAMA"
+    # ---- PHASE 4 ----
+    log_info "PHASE 4: SQLite PATCHING"
 
     if [ -n "$SQLITE3_BIN" ]; then
         for db_name in History Cookies "Web Data" "Login Data" Favicons; do
@@ -258,19 +258,19 @@ main() {
             [ $patched -gt 0 ] && log_ok "SQLite: $db_name ($patched)"
         done
     else
-        log_warn "sqlite3 yok, SQLite yamalama atlandi"
+        log_warn "sqlite3 not found, SQLite patching skipped"
     fi
 
-    # ---- FAZA 5 ----
-    log_info "FAZA 5: WEB DEPOLAMA"
+    # ---- PHASE 5 ----
+    log_info "PHASE 5: WEB STORAGE"
 
     safe_cp "${src_profile}/Local Storage" "${dst_profile}/Local Storage" "Local Storage/"
     safe_cp "${src_profile}/IndexedDB" "${dst_profile}/IndexedDB" "IndexedDB/"
     safe_cp "${src_profile}/databases" "${dst_profile}/databases" "WebSQL/"
     safe_cp "${src_profile}/Session Storage" "${dst_profile}/Session Storage" "Session Storage/"
 
-    # ---- FAZA 6 ----
-    log_info "FAZA 6: TEMIZLIK"
+    # ---- PHASE 6 ----
+    log_info "PHASE 6: CLEANUP"
 
     for cd in GPUCache "Code Cache" Cache; do
         rm -rf "${dst_profile}/${cd}" 2>/dev/null
@@ -284,18 +284,18 @@ main() {
     if [ -n "$uid" ]; then
         fix_perms "$dst_base" "$uid"
     else
-        log_error "UID alinamadi!"
+        log_error "Could not get UID!"
     fi
 
     stop_pkg "$DST"
 
     log_info "============================================"
-    log_ok   "CHROMIUM GOCU TAMAMLANDI!"
+    log_ok   "CHROMIUM MIGRATION COMPLETED!"
     log_info "============================================"
 }
 
 if [ -z "$SRC" ] || [ -z "$DST" ]; then
-    echo "Kullanim: $0 <kaynak> <hedef>" >&2
+    echo "Usage: $0 <source> <target>" >&2
     exit 1
 fi
 

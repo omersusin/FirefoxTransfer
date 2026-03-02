@@ -51,12 +51,12 @@ class JsonPatcher(private val context: Context) {
         try {
             val raw = rootReadFile(securePrefsPath)
                 ?: return@withContext PatchResult(false,
-                    "Secure Preferences okunamadı: $securePrefsPath")
+                    "Could not read Secure Preferences: $securePrefsPath")
 
             val json = try { JSONObject(raw) }
             catch (e: Exception) {
                 return@withContext PatchResult(false,
-                    "Secure Prefs JSON parse hatası: ${e.message}")
+                    "Secure Prefs JSON parse error: ${e.message}")
             }
 
             var s = json.toString()
@@ -75,10 +75,10 @@ class JsonPatcher(private val context: Context) {
 
             val written = rootWriteFile(securePrefsPath, patched.toString(2))
             PatchResult(written,
-                if (written) "Secure Prefs yamalandı. Kaldırılan: ${removed.joinToString()}"
-                else "Secure Prefs yazılamadı")
+                if (written) "Secure Prefs patched. Removed: ${removed.joinToString()}"
+                else "Could not write Secure Prefs")
         } catch (e: Exception) {
-            PatchResult(false, "Secure Prefs hata: ${e.message}")
+            PatchResult(false, "Secure Prefs error: ${e.message}")
         }
     }
 
@@ -91,7 +91,7 @@ class JsonPatcher(private val context: Context) {
     ): PatchResult = withContext(Dispatchers.IO) {
         try {
             val raw = rootReadFile(prefsPath)
-                ?: return@withContext PatchResult(false, "Preferences okunamadı")
+                ?: return@withContext PatchResult(false, "Could not read Preferences")
 
             var s = raw
             s = s.replace("/data/data/$srcPkg/", "/data/data/$dstPkg/")
@@ -101,16 +101,16 @@ class JsonPatcher(private val context: Context) {
             val validated = try { JSONObject(s) }
             catch (e: Exception) {
                 return@withContext PatchResult(false,
-                    "Yamalı Preferences geçersiz: ${e.message}")
+                    "Patched Preferences invalid: ${e.message}")
             }
 
             patchDownloadPaths(validated, srcPkg, dstPkg)
 
             val written = rootWriteFile(prefsPath, validated.toString(2))
             PatchResult(written,
-                if (written) "Preferences yamalandı" else "Yazma başarısız")
+                if (written) "Preferences patched" else "Write failed")
         } catch (e: Exception) {
-            PatchResult(false, "Preferences hata: ${e.message}")
+            PatchResult(false, "Preferences error: ${e.message}")
         }
     }
 
@@ -121,21 +121,21 @@ class JsonPatcher(private val context: Context) {
     ): PatchResult = withContext(Dispatchers.IO) {
         try {
             val raw = rootReadFile(localStatePath)
-                ?: return@withContext PatchResult(false, "Local State okunamadı")
+                ?: return@withContext PatchResult(false, "Could not read Local State")
 
             val s = raw.replace(srcPkg, dstPkg)
 
             try { JSONObject(s) }
             catch (e: Exception) {
                 return@withContext PatchResult(false,
-                    "Local State geçersiz: ${e.message}")
+                    "Local State invalid: ${e.message}")
             }
 
             val written = rootWriteFile(localStatePath, s)
             PatchResult(written,
-                if (written) "Local State yamalandı" else "Yazma başarısız")
+                if (written) "Local State patched" else "Write failed")
         } catch (e: Exception) {
-            PatchResult(false, "Local State hata: ${e.message}")
+            PatchResult(false, "Local State error: ${e.message}")
         }
     }
 
@@ -148,7 +148,7 @@ class JsonPatcher(private val context: Context) {
     ): PatchResult = withContext(Dispatchers.IO) {
         try {
             val raw = rootReadFile(extensionsJsonPath)
-                ?: return@withContext PatchResult(false, "extensions.json okunamadı")
+                ?: return@withContext PatchResult(false, "Could not read extensions.json")
 
             var s = raw
             val srcPath = "/data/data/$srcPkg/files/mozilla/$srcProfileName"
@@ -159,14 +159,14 @@ class JsonPatcher(private val context: Context) {
             try { JSONObject(s) }
             catch (e: Exception) {
                 return@withContext PatchResult(false,
-                    "extensions.json geçersiz: ${e.message}")
+                    "extensions.json invalid: ${e.message}")
             }
 
             val written = rootWriteFile(extensionsJsonPath, s)
             PatchResult(written,
-                if (written) "extensions.json yamalandı" else "Yazma başarısız")
+                if (written) "extensions.json patched" else "Write failed")
         } catch (e: Exception) {
-            PatchResult(false, "extensions.json hata: ${e.message}")
+            PatchResult(false, "extensions.json error: ${e.message}")
         }
     }
 
@@ -176,7 +176,7 @@ class JsonPatcher(private val context: Context) {
     ): PatchResult = withContext(Dispatchers.IO) {
         try {
             val srcContent = rootReadFile(srcPrefsPath)
-                ?: return@withContext PatchResult(false, "Kaynak prefs.js okunamadı")
+                ?: return@withContext PatchResult(false, "Source prefs.js could not be read")
 
             var dstContent = rootReadFile(dstPrefsPath) ?: ""
 
@@ -204,15 +204,15 @@ class JsonPatcher(private val context: Context) {
 
             if (injectedCount == 0) {
                 return@withContext PatchResult(true,
-                    "UUID sync: Kaynak'ta eklenti UUID'si bulunamadı")
+                    "UUID sync: Extension UUID not found in source")
             }
 
             val written = rootWriteFile(dstPrefsPath, dstContent)
             PatchResult(written,
-                if (written) "UUID sync: $injectedCount pref enjekte edildi"
-                else "prefs.js yazılamadı")
+                if (written) "UUID sync: $injectedCount pref injected"
+                else "Could not write prefs.js")
         } catch (e: Exception) {
-            PatchResult(false, "UUID sync hata: ${e.message}")
+            PatchResult(false, "UUID sync error: ${e.message}")
         }
     }
 

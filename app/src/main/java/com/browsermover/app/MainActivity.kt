@@ -138,7 +138,7 @@ class MainActivity : AppCompatActivity() {
                     "[OK]"   in p.detail -> cGreen
                     "[WARN]" in p.detail -> cOrange
                     "[ERR]"  in p.detail -> cRed
-                    "FAZA"   in p.detail -> cBlue
+                    "PHASE"  in p.detail -> cBlue
                     else -> cGray
                 }
                 appendLog(p.detail, color)

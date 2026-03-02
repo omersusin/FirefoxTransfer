@@ -1,30 +1,16 @@
+#  Browser Migrator — ProGuard / R8 Rules
 # ============================================================
-#  Browser Migrator — ProGuard / R8 Kuralları
-# ============================================================
 
-# ---- Kotlin ----
--keep class kotlin.** { *; }
--keep class kotlinx.** { *; }
--dontwarn kotlinx.coroutines.**
-
-# ---- Model sınıfları ----
--keep class com.browsermover.app.model.** { *; }
--keep class com.browsermover.app.core.JsonPatcher$PatchResult { *; }
--keep class com.browsermover.app.root.CommandResult { *; }
-
-# ---- Sealed class'lar ----
--keep class com.browsermover.app.model.MigrationResult { *; }
--keep class com.browsermover.app.model.MigrationResult$* { *; }
-
-# ---- org.json ----
+# JSON support
 -keep class org.json.** { *; }
--dontwarn org.json.**
 
-# ---- BrowserAdapter ViewHolder ----
--keep class com.browsermover.app.ui.BrowserAdapter$ViewHolder { *; }
+# Kotlin Coroutines
+-keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
+-keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
 
-# ---- Genel Android ----
--keepattributes SourceFile,LineNumberTable
--keepattributes *Annotation*
--keepattributes Signature
--keepattributes InnerClasses,EnclosingMethod
+# ---- Model classes ----
+-keepclassmembers class com.browsermover.app.model.** { *; }
+-keep class com.browsermover.app.model.** { *; }
+
+# ViewBinding
+-keep class com.browsermover.app.databinding.** { *; }

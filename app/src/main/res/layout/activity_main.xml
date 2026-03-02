@@ -13,7 +13,7 @@
         android:orientation="vertical"
         android:padding="16dp">
 
-        <!-- Başlık -->
+        <!-- Header -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -33,7 +33,7 @@
             android:gravity="center"
             android:paddingBottom="16dp"/>
 
-        <!-- Root Durum -->
+        <!-- Root Status -->
         <TextView
             android:id="@+id/txtRootStatus"
             android:layout_width="match_parent"
@@ -45,7 +45,7 @@
             android:padding="8dp"
             android:layout_marginBottom="16dp"/>
 
-        <!-- Kaynak Paket -->
+        <!-- Source Package -->
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -65,7 +65,7 @@
                 android:hint="org.mozilla.firefox"/>
         </com.google.android.material.textfield.TextInputLayout>
 
-        <!-- Hedef Paket -->
+        <!-- Target Package -->
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -85,7 +85,7 @@
                 android:hint="com.brave.browser"/>
         </com.google.android.material.textfield.TextInputLayout>
 
-        <!-- İlerleme -->
+        <!-- Progress -->
         <ProgressBar
             android:id="@+id/progressBar"
             style="@android:style/Widget.ProgressBar.Horizontal"
@@ -98,7 +98,7 @@
             android:visibility="gone"
             android:layout_marginBottom="8dp"/>
 
-        <!-- Başlat Butonu -->
+        <!-- Start Button -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnStart"
             android:layout_width="match_parent"
@@ -110,7 +110,7 @@
             android:enabled="false"
             android:layout_marginBottom="16dp"/>
 
-        <!-- Log Paneli -->
+        <!-- Log Panel -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
