@@ -17,10 +17,10 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("../keystore/release.jks")
-            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
-            keyAlias = System.getenv("KEY_ALIAS") ?: ""
-            keyPassword = System.getenv("KEY_PASSWORD") ?: ""
+            storeFile = file("keystore.jks")
+            storePassword = "browsermover123"
+            keyAlias = "browsermover"
+            keyPassword = "browsermover123"
         }
     }
 
