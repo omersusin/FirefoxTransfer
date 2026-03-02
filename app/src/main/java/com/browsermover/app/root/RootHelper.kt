@@ -20,6 +20,14 @@ data class CommandResult(
 
 object RootHelper {
 
+    /**
+     * DÜZELTME: Mount namespace izolasyonu bypass
+     * Android'de su shell'i uygulamanın mount namespace'inde çalışır.
+     * nsenter -t 1 -m: PID 1'in (init) mount namespace'ine girer.
+     */
+    private const val ENTER_GLOBAL_NS =
+        "command -v nsenter >/dev/null 2>&1 && exec nsenter -t 1 -m -- /system/bin/sh"
+
     suspend fun checkRoot(): Boolean = withContext(Dispatchers.IO) {
         try {
             val process = Runtime.getRuntime().exec("su")
@@ -29,10 +37,7 @@ object RootHelper {
             os.flush()
             os.close()
 
-            val reader = BufferedReader(InputStreamReader(process.inputStream))
-            val output = reader.readText()
-            reader.close()
-
+            val output = BufferedReader(InputStreamReader(process.inputStream)).readText()
             process.waitFor(10, TimeUnit.SECONDS)
             output.contains("uid=0")
         } catch (_: Exception) {
@@ -44,6 +49,10 @@ object RootHelper {
         try {
             val process = Runtime.getRuntime().exec("su")
             val os = DataOutputStream(process.outputStream)
+
+            // Global namespace'e geç
+            os.writeBytes("$ENTER_GLOBAL_NS\n")
+
             os.writeBytes("$command\n")
             os.writeBytes("exit\n")
             os.flush()
@@ -75,7 +84,7 @@ object RootHelper {
                 success = exitCode == 0
             )
         } catch (e: Exception) {
-            CommandResult(-1, "", e.message ?: "Unknown error", false)
+            CommandResult(-1, "", e.message ?: "Error", false)
         }
     }
 
@@ -84,6 +93,10 @@ object RootHelper {
             try {
                 val process = Runtime.getRuntime().exec("su")
                 val os = DataOutputStream(process.outputStream)
+
+                // Global namespace'e geç
+                os.writeBytes("$ENTER_GLOBAL_NS\n")
+
                 for (cmd in commands) {
                     os.writeBytes("$cmd\n")
                 }
@@ -96,13 +109,15 @@ object RootHelper {
 
                 val stderrJob = launch {
                     try {
-                        BufferedReader(InputStreamReader(process.errorStream))
-                            .forEachLine { stderrBuilder.appendLine(it) }
+                        val reader = BufferedReader(InputStreamReader(process.errorStream))
+                        reader.forEachLine { stderrBuilder.appendLine(it) }
+                        reader.close()
                     } catch (_: Exception) {}
                 }
 
-                BufferedReader(InputStreamReader(process.inputStream))
-                    .forEachLine { stdoutBuilder.appendLine(it) }
+                val stdoutReader = BufferedReader(InputStreamReader(process.inputStream))
+                stdoutReader.forEachLine { stdoutBuilder.appendLine(it) }
+                stdoutReader.close()
 
                 stderrJob.join()
                 val exitCode = process.waitFor()
@@ -114,13 +129,10 @@ object RootHelper {
                     success = exitCode == 0
                 )
             } catch (e: Exception) {
-                CommandResult(-1, "", e.message ?: "Unknown error", false)
+                CommandResult(-1, "", e.message ?: "Error", false)
             }
         }
 
-    /**
-     * Canlı çıktı akışı ile script çalıştır.
-     */
     suspend fun execStreaming(
         scriptPath: String,
         args: List<String> = emptyList(),
@@ -130,11 +142,14 @@ object RootHelper {
             val process = Runtime.getRuntime().exec("su")
             val os = DataOutputStream(process.outputStream)
 
+            // Global namespace'e geç
+            os.writeBytes("$ENTER_GLOBAL_NS\n")
+
             val fullCommand = buildString {
                 append("sh \"$scriptPath\"")
                 args.forEach { append(" \"$it\"") }
             }
-            os.writeBytes("$fullCommand 2>&1\n")  // stderr'i stdout'a yönlendir
+            os.writeBytes("$fullCommand 2>&1\n")
             os.writeBytes("exit\n")
             os.flush()
             os.close()
