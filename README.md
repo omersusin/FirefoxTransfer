@@ -1,50 +1,78 @@
-# Browser Data Migrator (v3)
-============================================================
+# 🌐 Browser Data Migrator for Android
 
-Open-source tool that migrates **all data** (bookmarks, passwords, history, extensions) between Android browsers using root access.
+**The bridge for your browser data.**  
+Migrate your bookmarks, history, passwords, and extensions between Android browsers instantly—no cloud sync or manual exporting required.
 
-| Engine   | Browsers                                         |
-|----------|--------------------------------------------------|
-| **Gecko**| Firefox, Mull, Iceraven, Fennec, Tor, Focus      |
-| **Chromium** | Chrome, Brave, Kiwi, Vivaldi, Opera, Edge, Samsung |
+---
 
-## 📦 Migrated Data
-| Data Type      | Gecko | Chromium | Notes                            |
-|----------------|-------|----------|----------------------------------|
-| Bookmarks      | ✅    | ✅       |                                  |
-| History        | ✅    | ✅       |                                  |
-| Passwords      | ✅    | ⚠️       | Chromium: Keystore dependent     |
-| Cookies        | ✅    | ✅       |                                  |
-| Extensions     | ✅    | ✅       | Within same engine family        |
-| Site Permissions| ✅    | ✅       |                                  |
-| Tabs           | ❌    | ❌       | Intentional: crash prevention    |
+## 🤔 What is this?
+**Browser Data Migrator** is a powerful open-source tool designed for power users who want to switch browsers on Android without losing their digital life. Whether you're moving from **Firefox to Iceraven** or **Chrome to Brave**, this tool handles the heavy lifting by copying and patching internal database files directly.
+
+> [!IMPORTANT]
+> **Root access is required** (Magisk, KernelSU, or SuperSU) to access protected browser data directories.
+
+---
+
+## ✨ Key Features
+- **🚀 One-Tap Migration:** Select source and target, press start—done.
+- **📁 Comprehensive Data Support:** Moves Bookmarks, History, Cookies, and even Extensions.
+- **🔧 Smart Patching:** Automatically updates internal paths and package names within database files (SQLite) and JSON configs.
+- **🛡️ Safety First:** Automatic backups are created before any modification. 
+- **🧹 Built-in Cleanup:** One-tap button to clear migration backups and free up space.
+- **🌍 Wide Compatibility:** Supports both **Gecko** (Firefox-based) and **Chromium** (Chrome-based) engines.
+
+---
+
+## 📦 Supported Data & Engines
+
+| Data Type | Gecko 🦊 | Chromium 🌐 | Notes |
+| :--- | :---: | :---: | :--- |
+| **Bookmarks** | ✅ | ✅ | Full history & star sync. |
+| **History** | ✅ | ✅ | Your browsing timeline. |
+| **Passwords** | ✅ | ⚠️ | Chromium: Limited by Android Keystore. |
+| **Cookies** | ✅ | ✅ | Stay logged in on your favorite sites. |
+| **Extensions** | ✅ | ✅ | Preserves extension data and settings. |
+| **Site Permissions** | ✅ | ✅ | Notifications, location, etc. |
+
+---
 
 ## 🛠 Prerequisites
-- **Root access** (Magisk / KernelSU / SuperSU)
-- ~100MB free storage
+1. **Root Access:** Essential for reading/writing to `/data/data/`.
+2. **Target Browser Installed:** The app you are moving *to* must be installed.
+3. **Storage:** ~100MB of free space for temporary processing and backups.
 
-## 🚀 Usage
-1. Install and open the APK.
-2. Grant Root permission.
-3. Select Source browser (where data is coming from).
-4. Select Target browser (where data will be written).
-5. Press "START MIGRATION".
-6. (Optional) Use "DELETE BACKUPS" to clear storage once verified.
-7. Open the target browser and enjoy your data.
+---
+
+## 🚀 How to Use
+1. **Open the App:** Grant Root permissions when prompted.
+2. **Select Source:** Type or paste the package name of your current browser (e.g., `org.mozilla.firefox`).
+3. **Select Target:** Type or paste the package name of your new browser (e.g., `com.brave.browser`).
+4. **Start:** Tap **START MIGRATION** and watch the real-time log.
+5. **Verify:** Open your new browser and verify your data is there.
+6. **Cleanup:** Use **DELETE BACKUPS** to remove the temporary safety copies.
+
+---
+
+## 🔒 Security & Privacy
+- **Local Only:** No data ever leaves your device. No analytics, no cloud, no internet required.
+- **Input Validation:** Strict regex filtering on package names to prevent shell injection.
+- **Sandboxed Execution:** Scripts run in a controlled environment under `/data/local/tmp`.
+- **SELinux Aware:** Automatically restores file contexts using `restorecon` to prevent "App Not Responding" or permission issues.
+
+---
 
 ## ⚠️ Known Limitations
-- **Chromium Passwords**: Moving between different package UIDs may cause password decryption issues as the Android Keystore keys change. No issues when reinstalling the same package.
-- **Cross-engine**: Extensions cannot be moved between Gecko → Chromium or vice-versa due to different database schemas.
-- **Tabs**: Intentionally not migrated due to format incompatibilities. This prevents the target browser from crashing.
+- **Chromium Passwords:** Due to Android Keystore encryption, passwords moved between different apps (e.g., Chrome -> Brave) may not be decryptable. Migration works best when reinstalling the *same* app or moving within identical signature families.
+- **Tabs:** Intentionally skipped to prevent session crashes caused by version mismatches.
 
-## 🔒 Security
-- Package names are validated with regex (shell injection prevention).
-- All temporary files are kept under `/data/local/tmp`.
-- Backups are written to root-only areas, not the SD card.
-- JSON patching is done with base64/temp-file (no heredoc vulnerabilities).
-- SELinux contexts are fixed with `restorecon`.
+---
 
-## ⚙️ Build
+## 🏗 Build from Source
 ```bash
+git clone https://github.com/omersusin/FirefoxTransfer.git
+cd FirefoxTransfer
 ./gradlew assembleRelease
 ```
+
+---
+*Developed with ❤️ for the Android community.*
