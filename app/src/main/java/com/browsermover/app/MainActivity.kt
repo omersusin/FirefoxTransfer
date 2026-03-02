@@ -52,7 +52,7 @@ class MainActivity : AppCompatActivity() {
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (isMigrating) {
-            Toast.makeText(this, "Göç devam ediyor! Çıkış veri kaybına neden olabilir.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Migration in progress! Exiting may cause data loss.", Toast.LENGTH_LONG).show()
             return
         }
         @Suppress("DEPRECATION")
@@ -80,18 +80,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun checkRoot() {
         lifecycleScope.launch {
-            b.txtRootStatus.text = "Root kontrol ediliyor..."
+            b.txtRootStatus.text = "Checking root access..."
             b.txtRootStatus.setTextColor(cOrange)
 
             if (RootHelper.checkRoot()) {
-                b.txtRootStatus.text = "✓ Root erişimi mevcut"
+                b.txtRootStatus.text = "✓ Root access available"
                 b.txtRootStatus.setTextColor(cGreen)
                 updateButton()
             } else {
-                b.txtRootStatus.text = "✗ Root erişimi YOK"
+                b.txtRootStatus.text = "✗ NO root access"
                 b.txtRootStatus.setTextColor(cRed)
                 b.btnStart.isEnabled = false
-                appendLog("[ERR] Root bulunamadı!", cRed)
+                appendLog("[ERR] Root not found!", cRed)
             }
         }
     }
@@ -101,19 +101,19 @@ class MainActivity : AppCompatActivity() {
         val dst = b.etTarget.text?.toString()?.trim() ?: return
 
         if (!PackageValidator.isValid(src) || !PackageValidator.isValid(dst)) {
-            Toast.makeText(this, "Geçersiz paket adı!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Invalid package name!", Toast.LENGTH_SHORT).show()
             return
         }
         if (src == dst) {
-            Toast.makeText(this, "Kaynak ve hedef aynı olamaz!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Source and target cannot be the same!", Toast.LENGTH_SHORT).show()
             return
         }
 
         AlertDialog.Builder(this)
-            .setTitle("Göç Onayı")
-            .setMessage("Kaynak: $src\nHedef: $dst\n\nHedef verilerin üzerine yazılacak.\nDevam?")
-            .setPositiveButton("Başlat") { _, _ -> startMigration(src, dst) }
-            .setNegativeButton("İptal", null)
+            .setTitle("Migration Confirmation")
+            .setMessage("Source: $src\nTarget: $dst\n\nTarget data will be overwritten.\nContinue?")
+            .setPositiveButton("Start") { _, _ -> startMigration(src, dst) }
+            .setNegativeButton("Cancel", null)
             .show()
     }
 
@@ -123,13 +123,13 @@ class MainActivity : AppCompatActivity() {
         migrationJob = lifecycleScope.launch {
             isMigrating = true
             b.btnStart.isEnabled = false
-            b.btnStart.text = "GÖÇ DEVAM EDİYOR..."
+            b.btnStart.text = "MIGRATION IN PROGRESS..."
             b.progressBar.visibility = View.VISIBLE
             b.progressBar.progress = 0
 
             logBuilder.clear()
             appendLog("═══════════════════════════════════", cBlue)
-            appendLog("GÖÇ BAŞLIYOR: $src -> $dst", cBlue)
+            appendLog("MIGRATION STARTING: $src -> $dst", cBlue)
             appendLog("═══════════════════════════════════", cBlue)
 
             val result = mover.migrate(src, dst) { p ->
@@ -150,21 +150,21 @@ class MainActivity : AppCompatActivity() {
                 is MigrationResult.Success -> {
                     appendLog("✓ ${result.summary}", cGreen)
                     result.warnings.forEach { appendLog("  ! $it", cOrange) }
-                    setButtonResult("✓ TAMAMLANDI", cGreen)
+                    setButtonResult("✓ COMPLETED", cGreen)
                 }
                 is MigrationResult.Partial -> {
                     appendLog("! ${result.message}", cOrange)
                     result.successItems.forEach { appendLog("  ✓ $it", cGreen) }
                     result.failedItems.forEach { appendLog("  ✗ $it", cRed) }
-                    setButtonResult("! KISMİ", cOrange)
+                    setButtonResult("! PARTIAL", cOrange)
                 }
                 is MigrationResult.Failure -> {
                     appendLog("✗ ${result.error}", cRed)
                     if (result.technicalDetail?.isNotBlank() == true) {
-                        appendLog("--- Detay ---", cGray)
+                        appendLog("--- Details ---", cGray)
                         appendLog(result.technicalDetail!!, cGray)
                     }
-                    setButtonResult("✗ BAŞARISIZ", cRed)
+                    setButtonResult("✗ FAILED", cRed)
                 }
                 else -> {}
             }
@@ -173,7 +173,7 @@ class MainActivity : AppCompatActivity() {
             isMigrating = false
 
             b.btnStart.postDelayed({
-                b.btnStart.text = "GÖÇÜ BAŞLAT"
+                b.btnStart.text = "START MIGRATION"
                 b.btnStart.backgroundTintList = ColorStateList.valueOf(cBlue)
                 updateButton()
                 b.progressBar.visibility = View.GONE
