@@ -1,14 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="background">#F5F5F5</color>
-    <color name="card_header">#1565C0</color>
+    <color name="bg_dark">#121212</color>
+    <color name="bg_card">#1E1E1E</color>
+    <color name="bg_card_selected">#1A237E</color>
+    <color name="accent_blue">#2196F3</color>
+    <color name="accent_green">#4CAF50</color>
+    <color name="accent_orange">#FFA726</color>
+    <color name="accent_red">#EF5350</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#888888</color>
+    <color name="text_tertiary">#666666</color>
+    <color name="border">#333333</color>
     <color name="white">#FFFFFF</color>
-    <color name="white_70">#B3FFFFFF</color>
-    <color name="text_primary">#212121</color>
-    <color name="text_secondary">#757575</color>
-    <color name="card_stroke">#E0E0E0</color>
-    <color name="selected_stroke">#1565C0</color>
-    <color name="log_background">#FAFAFA</color>
-    <color name="badge_firefox">#FF6611</color>
-    <color name="badge_chromium">#4285F4</color>
 </resources>

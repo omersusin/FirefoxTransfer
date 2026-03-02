@@ -1,49 +1,49 @@
-# Browser Data Mover 🚀
+# Browser Data Migrator (v3)
+============================================================
 
-A powerful Android tool for transferring data between **Firefox-based** and **Chromium-based** browsers with **Root access**.
+Open-source tool that migrates **all data** (bookmarks, passwords, history, extensions) between Android browsers using root access.
 
-Easily migrate your bookmarks, logins, history, and cookies from Firefox to forks like **Iceraven**, **Mull**, or **Fennec**, or between Chrome, Brave, and other Chromium browsers.
+| Engine   | Browsers                                         |
+|----------|--------------------------------------------------|
+| **Gecko**| Firefox, Mull, Iceraven, Fennec, Tor, Focus      |
+| **Chromium** | Chrome, Brave, Kiwi, Vivaldi, Opera, Edge, Samsung |
 
-## 🌟 Features
+## 📦 Migrated Data
+| Data Type      | Gecko | Chromium | Notes                            |
+|----------------|-------|----------|----------------------------------|
+| Bookmarks      | ✅    | ✅       |                                  |
+| History        | ✅    | ✅       |                                  |
+| Passwords      | ✅    | ⚠️       | Chromium: Keystore dependent     |
+| Cookies        | ✅    | ✅       |                                  |
+| Extensions     | ✅    | ✅       | Within same engine family        |
+| Site Permissions| ✅    | ✅       |                                  |
+| Tabs           | ❌    | ❌       | Intentional: crash prevention    |
 
-*   **Root Access Required:** Uses root privileges to access and transfer protected data directories (`/data/data/`).
-*   **Cross-Fork Compatibility:** Specialized fixes for Firefox forks (Iceraven, Mull, etc.) to prevent crashes:
-    *   Patches absolute paths in `prefs.js`.
-    *   Cleans incompatible session data and lock files (`parent.lock`, `compatibility.ini`).
-    *   Syncs `profiles.ini` correctly to ensure profile recognition.
-*   **Supported Browsers:**
-    *   **Firefox Family:** Firefox (Stable, Beta, Nightly), Iceraven, Mull, Fennec, Tor Browser, Waterfox, and more.
-    *   **Chromium Family:** Chrome, Brave, Edge, Vivaldi, Kiwi, Bromite, Vanadium, and more.
-*   **Backup System:** Option to automatically backup the target browser's data to `/sdcard/BrowserDataMover/backups/` before overwriting.
-*   **Safety First:** Cleans crash reports, cache, and temporary files during transfer to ensure a clean slate.
+## 🛠 Prerequisites
+- **Root access** (Magisk / KernelSU / SuperSU)
+- ~100MB free storage
 
-## 🛠️ Installation
+## 🚀 Usage
+1. Install and open the APK.
+2. Grant Root permission.
+3. Select Source browser (where data is coming from).
+4. Select Target browser (where data will be written).
+5. Press "START MIGRATION".
+6. Once finished, open the target browser and verify.
 
-1.  Download the latest APK from the [Releases](https://github.com/omersusin/FirefoxTransfer/releases) page.
-2.  Install the APK on your rooted Android device.
-3.  Grant **Root** permissions when prompted.
+## ⚠️ Known Limitations
+- **Chromium Passwords**: Moving between different package UIDs may cause password decryption issues as the Android Keystore keys change. No issues when reinstalling the same package.
+- **Cross-engine**: Extensions cannot be moved between Gecko → Chromium or vice-versa due to different database schemas.
+- **Tabs**: Intentionally not migrated due to format incompatibilities. This prevents the target browser from crashing.
 
-## 📖 Usage
+## 🔒 Security
+- Package names are validated with regex (shell injection prevention).
+- All temporary files are kept under `/data/local/tmp`.
+- Backups are written to root-only areas, not the SD card.
+- JSON patching is done with base64/temp-file (no heredoc vulnerabilities).
+- SELinux contexts are fixed with `restorecon`.
 
-1.  **Select Family:** Choose between "Firefox Family" or "Chromium Family".
-2.  **Select Source:** Choose the browser you want to copy data *from*.
-3.  **Select Target:** Choose the browser you want to copy data *to*.
-    *   *Note: The target browser's data will be overwritten.*
-4.  **Transfer:** Tap the transfer button. The app will stop both browsers, backup the target (if selected), and migrate your data.
-5.  **Done:** Open the target browser and enjoy your synced data!
-
-## ⚠️ Disclaimer
-
-*   **Root Required:** This application **requires a rooted device** to function.
-*   **Data Overwrite:** The transfer process **deletes all existing data** in the target browser. Use the "Backup" option if you're unsure.
-*   **Use at Your Own Risk:** While we strive for safety, always backup important data. The developers are not responsible for data loss.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please fork the repository and submit a Pull Request.
-
-1.  Fork the project.
-2.  Create your feature branch (`git checkout -b feature/AmazingFeature`).
-3.  Commit your changes (`git commit -m 'Add some AmazingFeature'`).
-4.  Push to the branch (`git push origin feature/AmazingFeature`).
-5.  Open a Pull Request.
+## ⚙️ Build
+```bash
+./gradlew assembleRelease
+```

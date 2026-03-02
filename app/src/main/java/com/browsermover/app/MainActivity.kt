@@ -1,347 +1,222 @@
 package com.browsermover.app
 
-import android.content.pm.PackageManager
-import android.graphics.drawable.Drawable
+import android.content.res.ColorStateList
 import android.os.Bundle
-import android.view.LayoutInflater
+import android.text.Editable
+import android.text.Spannable
+import android.text.SpannableStringBuilder
+import android.text.TextWatcher
+import android.text.style.ForegroundColorSpan
 import android.view.View
-import android.view.ViewGroup
-import android.widget.ImageView
-import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import com.google.android.material.button.MaterialButton
-import com.google.android.material.card.MaterialCardView
-import com.google.android.material.switchmaterial.SwitchMaterial
-import com.google.android.material.textfield.TextInputEditText
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import com.browsermover.app.core.DataMover
+import com.browsermover.app.core.PackageValidator
+import com.browsermover.app.databinding.ActivityMainBinding
+import com.browsermover.app.model.MigrationResult
+import com.browsermover.app.root.RootHelper
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var detector: BrowserDetector
-    private lateinit var dataMover: DataMover
+    private lateinit var b: ActivityMainBinding
+    private lateinit var mover: DataMover
 
-    private lateinit var tvRootIcon: TextView
-    private lateinit var tvRootStatus: TextView
-    private lateinit var cardCategory: MaterialCardView
-    private lateinit var btnFirefox: MaterialButton
-    private lateinit var btnChromium: MaterialButton
-    private lateinit var cardSource: MaterialCardView
-    private lateinit var tvSourceTitle: TextView
-    private lateinit var btnBack: MaterialButton
-    private lateinit var rvSourceBrowsers: RecyclerView
-    private lateinit var cardTarget: MaterialCardView
-    private lateinit var tvTargetDescription: TextView
-    private lateinit var rvTargetBrowsers: RecyclerView
-    private lateinit var cardManual: MaterialCardView
-    private lateinit var etSourcePackage: TextInputEditText
-    private lateinit var etTargetPackage: TextInputEditText
-    private lateinit var btnManualTransfer: MaterialButton
-    private lateinit var cardBackup: MaterialCardView
-    private lateinit var switchBackup: SwitchMaterial
-    private lateinit var btnTransfer: MaterialButton
-    private lateinit var cardLog: MaterialCardView
-    private lateinit var tvLog: TextView
+    private var isMigrating = false
+    private var migrationJob: Job? = null
 
-    private var selectedType: BrowserType? = null
-    private var installedBrowsers: List<BrowserInfo> = emptyList()
-    private var selectedSource: BrowserInfo? = null
-    private var selectedTarget: BrowserInfo? = null
+    private val cBlue   by lazy { ContextCompat.getColor(this, R.color.accent_blue) }
+    private val cGreen  by lazy { ContextCompat.getColor(this, R.color.accent_green) }
+    private val cOrange by lazy { ContextCompat.getColor(this, R.color.accent_orange) }
+    private val cRed    by lazy { ContextCompat.getColor(this, R.color.accent_red) }
+    private val cGray   by lazy { ContextCompat.getColor(this, R.color.text_secondary) }
+
+    private val logBuilder = SpannableStringBuilder()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        b = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(b.root)
 
-        detector = BrowserDetector(this)
-        dataMover = DataMover()
+        mover = DataMover(this)
 
-        initViews()
+        setupInputWatchers()
+        b.btnStart.setOnClickListener { confirmAndStart() }
+        b.btnDeleteBackups.setOnClickListener { confirmDeleteBackups() }
         checkRoot()
     }
 
-    private fun initViews() {
-        tvRootIcon = findViewById(R.id.tvRootIcon)
-        tvRootStatus = findViewById(R.id.tvRootStatus)
-        cardCategory = findViewById(R.id.cardCategory)
-        btnFirefox = findViewById(R.id.btnFirefox)
-        btnChromium = findViewById(R.id.btnChromium)
-        cardSource = findViewById(R.id.cardSource)
-        tvSourceTitle = findViewById(R.id.tvSourceTitle)
-        btnBack = findViewById(R.id.btnBack)
-        rvSourceBrowsers = findViewById(R.id.rvSourceBrowsers)
-        cardTarget = findViewById(R.id.cardTarget)
-        tvTargetDescription = findViewById(R.id.tvTargetDescription)
-        rvTargetBrowsers = findViewById(R.id.rvTargetBrowsers)
-        cardManual = findViewById(R.id.cardManual)
-        etSourcePackage = findViewById(R.id.etSourcePackage)
-        etTargetPackage = findViewById(R.id.etTargetPackage)
-        btnManualTransfer = findViewById(R.id.btnManualTransfer)
-        cardBackup = findViewById(R.id.cardBackup)
-        switchBackup = findViewById(R.id.switchBackup)
-        btnTransfer = findViewById(R.id.btnTransfer)
-        cardLog = findViewById(R.id.cardLog)
-        tvLog = findViewById(R.id.tvLog)
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (isMigrating) {
+            Toast.makeText(this, "Migration in progress! Exiting may cause data loss.", Toast.LENGTH_LONG).show()
+            return
+        }
+        @Suppress("DEPRECATION")
+        super.onBackPressed()
+    }
 
-        rvSourceBrowsers.layoutManager = LinearLayoutManager(this)
-        rvTargetBrowsers.layoutManager = LinearLayoutManager(this)
+    private fun setupInputWatchers() {
+        val watcher = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
+            override fun onTextChanged(s: CharSequence?, st: Int, bf: Int, c: Int) {}
+            override fun afterTextChanged(s: Editable?) = updateButton()
+        }
+        b.etSource.addTextChangedListener(watcher)
+        b.etTarget.addTextChangedListener(watcher)
+    }
 
-        btnFirefox.setOnClickListener { onCategorySelected(BrowserType.FIREFOX) }
-        btnChromium.setOnClickListener { onCategorySelected(BrowserType.CHROMIUM) }
-        btnBack.setOnClickListener { goBackToCategory() }
-        btnTransfer.setOnClickListener { onTransferClicked() }
-        btnManualTransfer.setOnClickListener { onManualTransferClicked() }
+    private fun updateButton() {
+        val src = b.etSource.text?.toString()?.trim().orEmpty()
+        val dst = b.etTarget.text?.toString()?.trim().orEmpty()
+        b.btnStart.isEnabled = !isMigrating &&
+            PackageValidator.isValid(src) &&
+            PackageValidator.isValid(dst) &&
+            src != dst
     }
 
     private fun checkRoot() {
-        Thread {
-            val hasRoot = RootHelper.isRootAvailable()
-            runOnUiThread {
-                if (hasRoot) {
-                    tvRootIcon.text = "✅"
-                    tvRootStatus.text = "Root access available"
-                    cardCategory.visibility = View.VISIBLE
-                } else {
-                    tvRootIcon.text = "❌"
-                    tvRootStatus.text = "Root access not found! This app requires root."
-                }
+        lifecycleScope.launch {
+            b.txtRootStatus.text = "Checking root access..."
+            b.txtRootStatus.setTextColor(cOrange)
+
+            if (RootHelper.checkRoot()) {
+                b.txtRootStatus.text = "✓ Root access available"
+                b.txtRootStatus.setTextColor(cGreen)
+                updateButton()
+            } else {
+                b.txtRootStatus.text = "✗ NO root access"
+                b.txtRootStatus.setTextColor(cRed)
+                b.btnStart.isEnabled = false
+                appendLog("[ERR] Root not found!", cRed)
             }
-        }.start()
+        }
     }
 
-    private fun onCategorySelected(type: BrowserType) {
-        selectedType = type
-        selectedSource = null
-        selectedTarget = null
+    private fun confirmAndStart() {
+        val src = b.etSource.text?.toString()?.trim() ?: return
+        val dst = b.etTarget.text?.toString()?.trim() ?: return
 
-        cardCategory.visibility = View.GONE
-        cardSource.visibility = View.VISIBLE
-        cardManual.visibility = View.VISIBLE
-        cardBackup.visibility = View.VISIBLE
-        cardTarget.visibility = View.GONE
-        btnTransfer.visibility = View.GONE
+        if (!PackageValidator.isValid(src) || !PackageValidator.isValid(dst)) {
+            Toast.makeText(this, "Invalid package name!", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (src == dst) {
+            Toast.makeText(this, "Source and target cannot be the same!", Toast.LENGTH_SHORT).show()
+            return
+        }
 
-        tvSourceTitle.text = if (type == BrowserType.FIREFOX)
-            "🦊 Firefox Family — Select Source" else "🌐 Chromium Family — Select Source"
+        AlertDialog.Builder(this)
+            .setTitle("Migration Confirmation")
+            .setMessage("Source: $src\nTarget: $dst\n\nTarget data will be overwritten.\nContinue?")
+            .setPositiveButton("Start") { _, _ -> startMigration(src, dst) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
 
-        Thread {
-            // Fetch ALL browsers to ensure the target list is full
-            val allBrowsers = detector.detectInstalledBrowsers(null) 
-            runOnUiThread {
-                installedBrowsers = allBrowsers
-                
-                // Filter only the SOURCE list by the selected category
-                val sourceBrowsers = allBrowsers.filter { 
-                    it.type == type || it.type == BrowserType.UNKNOWN 
-                }
-                
-                if (sourceBrowsers.isEmpty()) {
-                    Toast.makeText(this, "No installed ${type.label} browsers found.", Toast.LENGTH_LONG).show()
-                } else {
-                    rvSourceBrowsers.adapter = BrowserAdapter(sourceBrowsers) { browser ->
-                        onSourceSelected(browser)
+    private fun confirmDeleteBackups() {
+        if (isMigrating) {
+            Toast.makeText(this, "Wait for migration to finish!", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Delete Backups")
+            .setMessage("This will delete all backups from previous migrations.\nAre you sure?")
+            .setPositiveButton("DELETE") { _, _ ->
+                lifecycleScope.launch {
+                    val count = mover.clearBackups()
+                    if (count > 0) {
+                        appendLog("✓ Deleted $count backup folders.", cGreen)
+                        Toast.makeText(this@MainActivity, "Deleted $count backups", Toast.LENGTH_SHORT).show()
+                    } else {
+                        appendLog("! No backups found.", cOrange)
+                        Toast.makeText(this@MainActivity, "No backups found", Toast.LENGTH_SHORT).show()
                     }
                 }
-            }
-        }.start()
-    }
-
-    private fun goBackToCategory() {
-        selectedType = null
-        selectedSource = null
-        selectedTarget = null
-        installedBrowsers = emptyList()
-
-        cardCategory.visibility = View.VISIBLE
-        cardSource.visibility = View.GONE
-        cardTarget.visibility = View.GONE
-        cardManual.visibility = View.GONE
-        cardBackup.visibility = View.GONE
-        btnTransfer.visibility = View.GONE
-        cardLog.visibility = View.GONE
-    }
-
-    private fun onSourceSelected(source: BrowserInfo) {
-        selectedSource = source
-        selectedTarget = null
-
-        etSourcePackage.setText(source.packageName)
-
-        val targets = detector.getCompatibleTargets(source, installedBrowsers)
-
-        cardTarget.visibility = View.VISIBLE
-        tvTargetDescription.text = "Compatible with ${source.name} (${source.type.label})"
-
-        if (targets.isEmpty()) {
-            tvTargetDescription.text = "No compatible target found. Use manual entry."
-            rvTargetBrowsers.adapter = null
-            btnTransfer.visibility = View.GONE
-        } else {
-            rvTargetBrowsers.adapter = BrowserAdapter(targets) { browser ->
-                onTargetSelected(browser)
-            }
-        }
-    }
-
-    private fun onTargetSelected(target: BrowserInfo) {
-        selectedTarget = target
-        etTargetPackage.setText(target.packageName)
-        btnTransfer.visibility = View.VISIBLE
-        btnTransfer.isEnabled = true
-        btnTransfer.text = "🚀 ${selectedSource?.name} → ${target.name}"
-    }
-
-    private fun onTransferClicked() {
-        val source = selectedSource ?: return
-        val target = selectedTarget ?: return
-        showConfirmDialog(source.name, target.name, source.packageName, target.packageName)
-    }
-
-    private fun onManualTransferClicked() {
-        val srcPkg = etSourcePackage.text.toString().trim()
-        val dstPkg = etTargetPackage.text.toString().trim()
-
-        if (srcPkg.isEmpty() || dstPkg.isEmpty()) {
-            Toast.makeText(this, "Please enter both package names", Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (srcPkg == dstPkg) {
-            Toast.makeText(this, "Source and target cannot be the same", Toast.LENGTH_SHORT).show()
-            return
-        }
-        showConfirmDialog(srcPkg, dstPkg, srcPkg, dstPkg)
-    }
-
-    private fun showConfirmDialog(srcName: String, dstName: String, srcPkg: String, dstPkg: String) {
-        AlertDialog.Builder(this)
-            .setTitle("⚠️ Transfer Confirmation")
-            .setMessage(
-                "This will DELETE all data of the target browser and replace it with source data.\n\n" +
-                "Source: $srcName\n($srcPkg)\n\n" +
-                "Target: $dstName\n($dstPkg)\n\n" +
-                "Do you want to continue?"
-            )
-            .setPositiveButton("Yes, Transfer") { _, _ ->
-                startTransfer(srcPkg, dstPkg)
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    private fun startTransfer(srcPkg: String, dstPkg: String) {
-        cardLog.visibility = View.VISIBLE
-        tvLog.text = ""
-        btnTransfer.isEnabled = false
-        btnManualTransfer.isEnabled = false
+    private fun startMigration(src: String, dst: String) {
+        if (migrationJob?.isActive == true) return
 
-        val source = BrowserInfo(
-            name = selectedSource?.name ?: srcPkg,
-            packageName = srcPkg,
-            type = selectedType ?: BrowserType.UNKNOWN,
-            isInstalled = true
-        )
-        val target = BrowserInfo(
-            name = selectedTarget?.name ?: dstPkg,
-            packageName = dstPkg,
-            type = selectedType ?: BrowserType.UNKNOWN,
-            isInstalled = true
-        )
+        migrationJob = lifecycleScope.launch {
+            isMigrating = true
+            b.btnStart.isEnabled = false
+            b.btnStart.text = "MIGRATION IN PROGRESS..."
+            b.progressBar.visibility = View.VISIBLE
+            b.progressBar.progress = 0
 
-        dataMover.moveData(source, target, switchBackup.isChecked, object : DataMover.ProgressListener {
-            override fun onProgress(message: String) {
-                appendLog("⏳ $message")
+            logBuilder.clear()
+            appendLog("═══════════════════════════════════", cBlue)
+            appendLog("MIGRATION STARTING: $src -> $dst", cBlue)
+            appendLog("═══════════════════════════════════", cBlue)
+
+            val result = mover.migrate(src, dst) { p ->
+                b.progressBar.progress = p.progressPercent
+                val color = when {
+                    "[OK]"   in p.detail -> cGreen
+                    "[WARN]" in p.detail -> cOrange
+                    "[ERR]"  in p.detail -> cRed
+                    "PHASE"  in p.detail -> cBlue
+                    else -> cGray
+                }
+                appendLog(p.detail, color)
             }
 
-            override fun onSuccess(message: String) {
-                appendLog("✅ $message")
-                btnTransfer.isEnabled = true
-                btnManualTransfer.isEnabled = true
-                AlertDialog.Builder(this@MainActivity)
-                    .setTitle("✅ Success!")
-                    .setMessage(message)
-                    .setPositiveButton("OK", null)
-                    .show()
+            appendLog("═══════════════════════════════════", cBlue)
+
+            when (result) {
+                is MigrationResult.Success -> {
+                    appendLog("✓ ${result.summary}", cGreen)
+                    result.warnings.forEach { appendLog("  ! $it", cOrange) }
+                    setButtonResult("✓ COMPLETED", cGreen)
+                }
+                is MigrationResult.Partial -> {
+                    appendLog("! ${result.message}", cOrange)
+                    result.successItems.forEach { appendLog("  ✓ $it", cGreen) }
+                    result.failedItems.forEach { appendLog("  ✗ $it", cRed) }
+                    setButtonResult("! PARTIAL", cOrange)
+                }
+                is MigrationResult.Failure -> {
+                    appendLog("✗ ${result.error}", cRed)
+                    if (result.technicalDetail?.isNotBlank() == true) {
+                        appendLog("--- Details ---", cGray)
+                        appendLog(result.technicalDetail!!, cGray)
+                    }
+                    setButtonResult("✗ FAILED", cRed)
+                }
+                else -> {}
             }
 
-            override fun onError(message: String) {
-                appendLog("❌ $message")
-                btnTransfer.isEnabled = true
-                btnManualTransfer.isEnabled = true
-                AlertDialog.Builder(this@MainActivity)
-                    .setTitle("❌ Error")
-                    .setMessage(message)
-                    .setPositiveButton("OK", null)
-                    .show()
-            }
-        })
+            b.progressBar.progress = 100
+            isMigrating = false
+
+            b.btnStart.postDelayed({
+                b.btnStart.text = "START MIGRATION"
+                b.btnStart.backgroundTintList = ColorStateList.valueOf(cBlue)
+                updateButton()
+                b.progressBar.visibility = View.GONE
+            }, 3000)
+        }
     }
 
-    private fun appendLog(msg: String) {
-        val current = tvLog.text.toString()
-        tvLog.text = if (current.isEmpty()) msg else "$current\n$msg"
+    private fun setButtonResult(text: String, color: Int) {
+        b.btnStart.text = text
+        b.btnStart.backgroundTintList = ColorStateList.valueOf(color)
     }
 
-    // ========== RecyclerView Adapter ==========
-
-    inner class BrowserAdapter(
-        private val browsers: List<BrowserInfo>,
-        private val onClick: (BrowserInfo) -> Unit
-    ) : RecyclerView.Adapter<BrowserAdapter.VH>() {
-
-        private var selectedPos = -1
-
-        inner class VH(view: View) : RecyclerView.ViewHolder(view) {
-            val card: MaterialCardView = view.findViewById(R.id.cardBrowser)
-            val ivIcon: ImageView = view.findViewById(R.id.ivBrowserIcon)
-            val tvName: TextView = view.findViewById(R.id.tvBrowserName)
-            val tvPkg: TextView = view.findViewById(R.id.tvPackageName)
-            val tvType: TextView = view.findViewById(R.id.tvBrowserType)
-        }
-
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
-            val v = LayoutInflater.from(parent.context).inflate(R.layout.item_browser, parent, false)
-            return VH(v)
-        }
-
-        override fun onBindViewHolder(holder: VH, position: Int) {
-            val b = browsers[position]
-
-            holder.tvName.text = b.name
-            holder.tvPkg.text = b.packageName
-            holder.tvType.text = b.type.label
-            holder.tvType.setBackgroundResource(
-                if (b.type == BrowserType.FIREFOX) R.drawable.badge_firefox
-                else R.drawable.badge_chromium
-            )
-
-            val icon = getAppIcon(b.packageName)
-            if (icon != null) holder.ivIcon.setImageDrawable(icon)
-            else holder.ivIcon.setImageResource(R.drawable.ic_launcher_foreground)
-
-            val selected = position == selectedPos
-            holder.card.strokeWidth = if (selected) 3 else 1
-            holder.card.strokeColor = getColor(
-                if (selected) R.color.selected_stroke else R.color.card_stroke
-            )
-
-            holder.card.setOnClickListener {
-                val old = selectedPos
-                selectedPos = holder.adapterPosition
-                if (old >= 0) notifyItemChanged(old)
-                notifyItemChanged(selectedPos)
-                onClick(b)
-            }
-        }
-
-        override fun getItemCount() = browsers.size
-    }
-
-    private fun getAppIcon(pkg: String): Drawable? {
-        return try {
-            packageManager.getApplicationIcon(pkg)
-        } catch (e: PackageManager.NameNotFoundException) {
-            null
-        }
+    private fun appendLog(text: String, color: Int) {
+        val start = logBuilder.length
+        logBuilder.append(text).append("\n")
+        logBuilder.setSpan(ForegroundColorSpan(color), start, start + text.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        b.txtLog.text = logBuilder
+        b.scrollLog.post { b.scrollLog.fullScroll(View.FOCUS_DOWN) }
     }
 }
