@@ -1,8 +1,7 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.BrowserDataMover" parent="Theme.Material3.Light.NoActionBar">
-        <item name="colorPrimary">#1565C0</item>
-        <item name="colorPrimaryDark">#0D47A1</item>
-        <item name="colorAccent">#2196F3</item>
+    <style name="Theme.BrowserMigrator" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/accent_blue</item>
+        <item name="android:windowBackground">@color/bg_dark</item>
+        <item name="android:statusBarColor">@color/bg_card</item>
     </style>
 </resources>

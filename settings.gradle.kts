@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "BrowserDataMover"
+rootProject.name = "BrowserMigrator"
 include(":app")

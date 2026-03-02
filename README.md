@@ -1,49 +1,74 @@
-# Browser Data Mover 🚀
+# 🌐 Browser Data Migrator
 
-A powerful Android tool for transferring data between **Firefox-based** and **Chromium-based** browsers with **Root access**.
+Root yetkisi kullanarak Android tarayıcıları arasında
+**tüm verileri** (yer imleri, şifreler, geçmiş, eklentiler)
+eksiksiz taşıyan açık kaynak araç.
 
-Easily migrate your bookmarks, logins, history, and cookies from Firefox to forks like **Iceraven**, **Mull**, or **Fennec**, or between Chrome, Brave, and other Chromium browsers.
+## ✨ Desteklenen Motorlar
 
-## 🌟 Features
+| Motor    | Tarayıcılar                                      |
+|----------|--------------------------------------------------|
+| 🦎 Gecko | Firefox, Fennec, Mull, Iceraven, Tor Browser     |
+| ⚡ Chromium | Chrome, Brave, Kiwi, Vivaldi, Edge, Opera, Samsung |
 
-*   **Root Access Required:** Uses root privileges to access and transfer protected data directories (`/data/data/`).
-*   **Cross-Fork Compatibility:** Specialized fixes for Firefox forks (Iceraven, Mull, etc.) to prevent crashes:
-    *   Patches absolute paths in `prefs.js`.
-    *   Cleans incompatible session data and lock files (`parent.lock`, `compatibility.ini`).
-    *   Syncs `profiles.ini` correctly to ensure profile recognition.
-*   **Supported Browsers:**
-    *   **Firefox Family:** Firefox (Stable, Beta, Nightly), Iceraven, Mull, Fennec, Tor Browser, Waterfox, and more.
-    *   **Chromium Family:** Chrome, Brave, Edge, Vivaldi, Kiwi, Bromite, Vanadium, and more.
-*   **Backup System:** Option to automatically backup the target browser's data to `/sdcard/BrowserDataMover/backups/` before overwriting.
-*   **Safety First:** Cleans crash reports, cache, and temporary files during transfer to ensure a clean slate.
+## 📦 Taşınan Veriler
 
-## 🛠️ Installation
+| Veri Tipi      | Gecko | Chromium | Not                              |
+|----------------|:-----:|:--------:|----------------------------------|
+| Yer İmleri     | ✅    | ✅       |                                  |
+| Geçmiş         | ✅    | ✅       |                                  |
+| Şifreler       | ✅    | ⚠️       | Chromium: Keystore bağımlı       |
+| Çerezler       | ✅    | ✅       |                                  |
+| Eklentiler     | ✅    | ✅       | Aynı motor ailesi içinde         |
+| Form Verisi    | ✅    | ✅       |                                  |
+| Site İzinleri  | ✅    | ✅       |                                  |
+| Sertifikalar   | ✅    | —        |                                  |
+| Sekmeler       | ❌    | ❌       | Kasıtlı: çökme önlemi           |
 
-1.  Download the latest APK from the [Releases](https://github.com/omersusin/FirefoxTransfer/releases) page.
-2.  Install the APK on your rooted Android device.
-3.  Grant **Root** permissions when prompted.
+## ⚙️ Gereksinimler
 
-## 📖 Usage
+- **Root erişimi** (Magisk / KernelSU / SuperSU)
+- Android 7.0+ (API 24)
+- ~100MB boş depolama
 
-1.  **Select Family:** Choose between "Firefox Family" or "Chromium Family".
-2.  **Select Source:** Choose the browser you want to copy data *from*.
-3.  **Select Target:** Choose the browser you want to copy data *to*.
-    *   *Note: The target browser's data will be overwritten.*
-4.  **Transfer:** Tap the transfer button. The app will stop both browsers, backup the target (if selected), and migrate your data.
-5.  **Done:** Open the target browser and enjoy your synced data!
+## 🚀 Kullanım
 
-## ⚠️ Disclaimer
+1. APK'yı yükleyin ve açın
+2. Root izni verin
+3. Kaynak tarayıcıyı seçin (veriler buradan alınacak)
+4. Hedef tarayıcıyı seçin (veriler buraya yazılacak)
+5. "GÖÇÜ BAŞLAT" butonuna basın
+6. İşlem tamamlanınca hedef tarayıcıyı açıp doğrulayın
 
-*   **Root Required:** This application **requires a rooted device** to function.
-*   **Data Overwrite:** The transfer process **deletes all existing data** in the target browser. Use the "Backup" option if you're unsure.
-*   **Use at Your Own Risk:** While we strive for safety, always backup important data. The developers are not responsible for data loss.
+## ⚠️ Bilinen Sınırlamalar
 
-## 🤝 Contributing
+- **Chromium şifreleri**: Farklı UID'ler arası taşımada
+  Android Keystore anahtarları değiştiği için şifreler
+  çözülemeyebilir. Aynı paket yeniden kurulumunda sorun yoktur.
 
-Contributions are welcome! Please fork the repository and submit a Pull Request.
+- **Çapraz motor**: Gecko → Chromium veya tersi taşımada
+  veritabanı şemaları farklı olduğu için eklentiler taşınamaz.
 
-1.  Fork the project.
-2.  Create your feature branch (`git checkout -b feature/AmazingFeature`).
-3.  Commit your changes (`git commit -m 'Add some AmazingFeature'`).
-4.  Push to the branch (`git push origin feature/AmazingFeature`).
-5.  Open a Pull Request.
+- **Sekmeler**: Format uyumsuzlukları nedeniyle kasıtlı olarak
+  taşınmaz. Bu, hedef tarayıcının çökmesini önler.
+
+## 🏗️ Derleme
+
+```bash
+git clone https://github.com/user/BrowserMigrator.git
+cd BrowserMigrator
+./gradlew assembleDebug
+# APK: app/build/outputs/apk/debug/
+```
+
+## 🔒 Güvenlik
+
+- Paket adları regex ile doğrulanır (shell injection önlemi)
+- Tüm geçici dosyalar `/data/local/tmp` altında tutulur
+- Yedekler SD karta değil root-only alana yazılır
+- JSON yamalama base64/temp-file ile yapılır (heredoc açığı yok)
+- SELinux bağlamları `restorecon` ile düzeltilir
+
+## 📄 Lisans
+
+MIT License
