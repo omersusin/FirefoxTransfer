@@ -46,6 +46,7 @@ class MainActivity : AppCompatActivity() {
 
         setupInputWatchers()
         b.btnStart.setOnClickListener { confirmAndStart() }
+        b.btnDeleteBackups.setOnClickListener { confirmDeleteBackups() }
         checkRoot()
     }
 
@@ -113,6 +114,31 @@ class MainActivity : AppCompatActivity() {
             .setTitle("Migration Confirmation")
             .setMessage("Source: $src\nTarget: $dst\n\nTarget data will be overwritten.\nContinue?")
             .setPositiveButton("Start") { _, _ -> startMigration(src, dst) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun confirmDeleteBackups() {
+        if (isMigrating) {
+            Toast.makeText(this, "Wait for migration to finish!", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Delete Backups")
+            .setMessage("This will delete all backups from previous migrations.\nAre you sure?")
+            .setPositiveButton("DELETE") { _, _ ->
+                lifecycleScope.launch {
+                    val count = mover.clearBackups()
+                    if (count > 0) {
+                        appendLog("✓ Deleted $count backup folders.", cGreen)
+                        Toast.makeText(this@MainActivity, "Deleted $count backups", Toast.LENGTH_SHORT).show()
+                    } else {
+                        appendLog("! No backups found.", cOrange)
+                        Toast.makeText(this@MainActivity, "No backups found", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
             .setNegativeButton("Cancel", null)
             .show()
     }

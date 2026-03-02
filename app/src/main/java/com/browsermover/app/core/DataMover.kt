@@ -157,6 +157,16 @@ class DataMover(private val context: Context) {
         } catch (_: Exception) { emptyList() }
     }
 
+    suspend fun clearBackups(): Int = withContext(Dispatchers.IO) {
+        try {
+            val count = RootHelper.exec("ls -d ${WORK_DIR}/backup_* 2>/dev/null | wc -l").stdout.trim().toIntOrNull() ?: 0
+            if (count > 0) {
+                RootHelper.exec("rm -rf ${WORK_DIR}/backup_*")
+            }
+            count
+        } catch (_: Exception) { 0 }
+    }
+
     suspend fun rollback(backupPath: String, onLine: suspend (String) -> Unit): Boolean = withContext(Dispatchers.IO) {
         extractScripts()
         val code = RootHelper.execStreaming("$SCRIPTS_DIR/rollback.sh", listOf(backupPath)) { line ->

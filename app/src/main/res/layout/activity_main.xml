@@ -108,6 +108,17 @@
             android:textStyle="bold"
             android:backgroundTint="#2196F3"
             android:enabled="false"
+            android:layout_marginBottom="8dp"/>
+
+        <!-- Delete Backups Button -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDeleteBackups"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="DELETE BACKUPS"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:backgroundTint="#FF5722"
             android:layout_marginBottom="16dp"/>
 
         <!-- Log Panel -->
