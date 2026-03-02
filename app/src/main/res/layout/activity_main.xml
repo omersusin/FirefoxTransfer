@@ -1,233 +1,142 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg_dark">
-
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/card_header"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        app:cardBackgroundColor="@color/bg_card"
-        app:cardCornerRadius="0dp"
-        app:cardElevation="4dp"
-        app:layout_constraintTop_toTopOf="parent">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="16dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/app_name"
-                android:textColor="@color/accent_blue"
-                android:textSize="20sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/txt_root_status"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="⏳ Root kontrol ediliyor..."
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp" />
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        app:layout_constraintBottom_toTopOf="@id/layout_actions"
-        app:layout_constraintTop_toBottomOf="@id/card_header">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="12dp">
-
-            <TextView
-                android:id="@+id/txt_source_selected"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                android:text="📤 Kaynak Tarayıcı Seçin"
-                android:textColor="@color/text_primary"
-                android:textStyle="bold" />
-
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/rv_source_browsers"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp" />
-
-            <TextView
-                android:id="@+id/txt_target_selected"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                android:text="📥 Hedef Tarayıcı Seçin"
-                android:textColor="@color/text_primary"
-                android:textStyle="bold" />
-
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/rv_target_browsers"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp" />
-
-            <LinearLayout
-                android:id="@+id/layout_manual_input"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="8dp"
-                    android:hint="Kaynak Paket Adı">
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/et_source_package"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="text" />
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="8dp"
-                    android:hint="Hedef Paket Adı">
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/et_target_package"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="text" />
-                </com.google.android.material.textfield.TextInputLayout>
-            </LinearLayout>
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_toggle_manual"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:text="⌨️ Manuel Paket Girişi"
-                android:textSize="12sp" />
-
-            <com.google.android.material.card.MaterialCardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                app:cardBackgroundColor="@color/bg_card"
-                app:cardCornerRadius="12dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="12dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal">
-
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="📋 İşlem Logları"
-                            android:textColor="@color/text_primary"
-                            android:textStyle="bold" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btn_clear_log"
-                            style="@style/Widget.Material3.Button.TextButton"
-                            android:layout_width="wrap_content"
-                            android:layout_height="32dp"
-                            android:padding="0dp"
-                            android:text="Temizle"
-                            android:textSize="10sp" />
-                    </LinearLayout>
-
-                    <ScrollView
-                        android:id="@+id/scroll_log"
-                        android:layout_width="match_parent"
-                        android:layout_height="200dp"
-                        android:layout_marginTop="8dp"
-                        android:background="@color/bg_dark"
-                        android:padding="8dp">
-
-                        <TextView
-                            android:id="@+id/txt_log"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:fontFamily="monospace"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="11sp" />
-                    </ScrollView>
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-        </LinearLayout>
-    </ScrollView>
+    android:background="#121212"
+    android:fillViewport="true">
 
     <LinearLayout
-        android:id="@+id/layout_actions"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/bg_card"
         android:orientation="vertical"
-        android:padding="16dp"
-        app:layout_constraintBottom_toBottomOf="parent">
+        android:padding="16dp">
+
+        <!-- Başlık -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Browser Data Migrator"
+            android:textColor="#FFFFFF"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:paddingBottom="4dp"/>
 
         <TextView
-            android:id="@+id/txt_progress_detail"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="4dp"
-            android:textColor="@color/text_secondary"
-            android:textSize="11sp"
-            android:visibility="gone"
-            tools:text="Faza 1: Keşif" />
-
-        <com.google.android.material.progressindicator.LinearProgressIndicator
-            android:id="@+id/progress_bar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            android:visibility="gone"
-            app:trackCornerRadius="4dp" />
+            android:text="Root · Gecko / Chromium"
+            android:textColor="#888888"
+            android:textSize="13sp"
+            android:gravity="center"
+            android:paddingBottom="16dp"/>
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_rollback"
+        <!-- Root Durum -->
+        <TextView
+            android:id="@+id/txtRootStatus"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:text="⏪ GERİ AL (Yedekler)"
+            android:layout_height="wrap_content"
+            android:text="Root kontrol ediliyor..."
+            android:textColor="#FFA726"
             android:textSize="14sp"
-            android:backgroundTint="@color/accent_orange"
-            android:enabled="true"
-            android:layout_marginBottom="16dp"
-            style="@style/Widget.Material3.Button.OutlinedButton"/>
+            android:gravity="center"
+            android:padding="8dp"
+            android:layout_marginBottom="16dp"/>
 
+        <!-- Kaynak Paket -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Kaynak Paket Adı"
+            app:hintTextColor="#64B5F6"
+            app:boxStrokeColor="#64B5F6"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+            android:layout_marginBottom="8dp">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etSource"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:inputType="text"
+                android:hint="org.mozilla.firefox"/>
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Hedef Paket -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Hedef Paket Adı"
+            app:hintTextColor="#81C784"
+            app:boxStrokeColor="#81C784"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+            android:layout_marginBottom="16dp">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etTarget"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:inputType="text"
+                android:hint="com.brave.browser"/>
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- İlerleme -->
+        <ProgressBar
+            android:id="@+id/progressBar"
+            style="@android:style/Widget.ProgressBar.Horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="8dp"
+            android:max="100"
+            android:progress="0"
+            android:progressTint="#4CAF50"
+            android:progressBackgroundTint="#333333"
+            android:visibility="gone"
+            android:layout_marginBottom="8dp"/>
+
+        <!-- Başlat Butonu -->
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_start_migration"
+            android:id="@+id/btnStart"
             android:layout_width="match_parent"
             android:layout_height="56dp"
-            android:enabled="false"
-            android:text="🚀 GÖÇÜ BAŞLAT"
+            android:text="GÖÇÜ BAŞLAT"
             android:textSize="16sp"
             android:textStyle="bold"
-            app:cornerRadius="12dp" />
-    </LinearLayout>
+            android:backgroundTint="#2196F3"
+            android:enabled="false"
+            android:layout_marginBottom="16dp"/>
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+        <!-- Log Paneli -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Göç Günlüğü"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:paddingBottom="8dp"/>
+
+        <ScrollView
+            android:id="@+id/scrollLog"
+            android:layout_width="match_parent"
+            android:layout_height="350dp"
+            android:background="@drawable/bg_log_panel"
+            android:padding="8dp">
+
+            <TextView
+                android:id="@+id/txtLog"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Kaynak ve hedef paket adlarini girin."
+                android:textColor="#888888"
+                android:textSize="11sp"
+                android:fontFamily="monospace"
+                android:lineSpacingExtra="2dp"/>
+        </ScrollView>
+
+    </LinearLayout>
+</ScrollView>
