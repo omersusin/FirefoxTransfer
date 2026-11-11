@@ -234,16 +234,20 @@ class DataMover(private val context: Context) {
         val dst = BrowserPaths.chromiumProfile(dstPkg)
         if (dst != null) {
             val dstBaseName = dst.baseDir.substringAfterLast('/')
-            results.add(
-                jsonPatcher.neutralizeSecurePreferences(
+            // Secure Preferences is created lazily by Chromium. Its absence is
+            // normal and must not turn a successful migration into a warning.
+            if (BrowserPaths.exists(dst.securePreferences)) {
+                val result = jsonPatcher.neutralizeSecurePreferences(
                     dst.securePreferences, srcPkg, dstPkg
                 )
-            )
-            results.add(
-                jsonPatcher.patchPreferences(
+                if (!result.success) results.add(result)
+            }
+            if (BrowserPaths.exists(dst.preferences)) {
+                val result = jsonPatcher.patchPreferences(
                     dst.preferences, srcPkg, dstPkg, dstBaseName, dstBaseName
                 )
-            )
+                if (!result.success) results.add(result)
+            }
         } else {
             results.add(JsonPatcher.PatchResult(false, "Could not locate Chromium profile for $dstPkg"))
         }
@@ -257,18 +261,24 @@ class DataMover(private val context: Context) {
         val dstProfile = dst?.profileDir
         val srcProfile = src?.profileDir
         if (dstProfile != null && srcProfile != null) {
-            results.add(
-                jsonPatcher.patchGeckoExtensionsJson(
-                    "$dstProfile/extensions.json",
+            val srcExtensions = "$srcProfile/extensions.json"
+            val dstExtensions = "$dstProfile/extensions.json"
+            if (BrowserPaths.exists(srcExtensions) && BrowserPaths.exists(dstExtensions)) {
+                val result = jsonPatcher.patchGeckoExtensionsJson(
+                    dstExtensions,
                     srcPkg,
                     dstPkg,
                     srcProfile.substringAfterLast('/'),
                     dstProfile.substringAfterLast('/')
                 )
-            )
-            results.add(
-                jsonPatcher.syncGeckoUuids("$srcProfile/prefs.js", "$dstProfile/prefs.js")
-            )
+                if (!result.success) results.add(result)
+            }
+            val srcPrefs = "$srcProfile/prefs.js"
+            val dstPrefs = "$dstProfile/prefs.js"
+            if (BrowserPaths.exists(srcPrefs) && BrowserPaths.exists(dstPrefs)) {
+                val result = jsonPatcher.syncGeckoUuids(srcPrefs, dstPrefs)
+                if (!result.success) results.add(result)
+            }
         } else {
             results.add(JsonPatcher.PatchResult(false, "Could not locate Gecko profile for $srcPkg/$dstPkg"))
         }

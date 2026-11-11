@@ -126,9 +126,26 @@ internal object CrossEngineConverter {
     fun readGecko(placesPath: String): GeckoData {
         val db = SQLiteDatabase.openDatabase(placesPath, null, SQLiteDatabase.OPEN_READONLY)
         try {
+            val placeCols = columns(db, "moz_places")
+            if ("id" !in placeCols || "url" !in placeCols) {
+                throw IllegalStateException(
+                    "Not a Gecko places database (moz_places columns: " +
+                        placeCols.sorted().joinToString(", ") + ")"
+                )
+            }
+
+            // Older Firefox forks and some Android builds do not have every
+            // column used by desktop Places. Select only what exists instead
+            // of failing the whole transfer with "no such column".
+            val titleExpr = if ("title" in placeCols) "title" else "''"
+            val visitCountExpr = if ("visit_count" in placeCols) "visit_count" else "0"
+            val lastVisitExpr = if ("last_visit_date" in placeCols) "last_visit_date" else "NULL"
+            val typedExpr = if ("typed" in placeCols) "typed" else "0"
+
             val placesById = LinkedHashMap<Long, SourcePlace>()
             db.rawQuery(
-                "SELECT id,url,title,visit_count,last_visit_date,typed FROM moz_places",
+                "SELECT id,url,$titleExpr,$visitCountExpr,$lastVisitExpr,$typedExpr " +
+                    "FROM moz_places",
                 null
             ).use { c ->
                 while (c.moveToNext()) {
@@ -144,19 +161,24 @@ internal object CrossEngineConverter {
                 }
             }
 
-            try {
-                db.rawQuery(
-                    "SELECT place_id,visit_date,visit_type FROM moz_historyvisits",
-                    null
-                ).use { c ->
-                    while (c.moveToNext()) {
-                        val place = placesById[c.getLong(0)] ?: continue
-                        val time = c.getLong(1)
-                        if (time > 0) place.visits.add(time)
-                        if (c.getInt(2) == 2) place.typed = true
+            val visitCols = columns(db, "moz_historyvisits")
+            if ("place_id" in visitCols) {
+                val dateExpr = if ("visit_date" in visitCols) "visit_date" else "NULL"
+                val typeExpr = if ("visit_type" in visitCols) "visit_type" else "0"
+                try {
+                    db.rawQuery(
+                        "SELECT place_id,$dateExpr,$typeExpr FROM moz_historyvisits",
+                        null
+                    ).use { c ->
+                        while (c.moveToNext()) {
+                            val place = placesById[c.getLong(0)] ?: continue
+                            val time = if (c.isNull(1)) 0L else c.getLong(1)
+                            if (time > 0) place.visits.add(time)
+                            if (c.getInt(2) == 2) place.typed = true
+                        }
                     }
+                } catch (_: Exception) {
                 }
-            } catch (_: Exception) {
             }
 
             for (place in placesById.values) {
@@ -186,8 +208,14 @@ internal object CrossEngineConverter {
     ): List<SourceBookmark> {
         val nodes = LinkedHashMap<Long, GeckoNode>()
         try {
+            val cols = columns(db, "moz_bookmarks")
+            if ("id" !in cols || "parent" !in cols || "type" !in cols) return emptyList()
+            val titleExpr = if ("title" in cols) "title" else "''"
+            val fkExpr = if ("fk" in cols) "fk" else "NULL"
+            val dateExpr = if ("dateAdded" in cols) "dateAdded" else "0"
             db.rawQuery(
-                "SELECT id,parent,type,title,fk,dateAdded FROM moz_bookmarks WHERE type IN (1,2)",
+                "SELECT id,parent,type,$titleExpr,$fkExpr,$dateExpr " +
+                    "FROM moz_bookmarks WHERE type IN (1,2)",
                 null
             ).use { c ->
                 while (c.moveToNext()) {
