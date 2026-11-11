@@ -45,11 +45,13 @@ class DataMover(private val context: Context) {
             "com.microsoft.emmx",
             "com.opera.browser",
             "com.sec.android.app.sbrowser",
-            "com.duckduckgo.mobile.android"
+            "com.duckduckgo.mobile.android",
+            "org.barebrowser"
         )
     }
 
     private val jsonPatcher = JsonPatcher(context)
+    private val crossEngineMigrator = CrossEngineMigrator(context)
 
     private suspend fun detectEngine(pkg: String): BrowserType {
         if (pkg in KNOWN_GECKO) return BrowserType.GECKO
@@ -63,7 +65,7 @@ class DataMover(private val context: Context) {
                 done
                 [ -z "${'$'}dd" ] && exit 1
                 if [ -d "${'$'}dd/files/mozilla" ]; then echo GECKO; exit 0; fi
-                for d in app_chrome app_chromium app_brave app_vivaldi; do
+                for d in app_chrome app_chromium app_brave app_vivaldi app_edge app_kiwi app_quark; do
                     [ -d "${'$'}dd/${'$'}d" ] && echo CHROMIUM && exit 0
                 done"""
             )
@@ -88,21 +90,44 @@ class DataMover(private val context: Context) {
                 return@withContext MigrationResult.Failure("Source and target cannot be the same!")
             }
 
-            emitProgress(onProgress, 0, "Preparation", "Extracting scripts...", 3)
+            if (!RootHelper.checkRoot()) {
+                return@withContext MigrationResult.Failure(
+                    "Root access is required. Grant root permission to Browser Data Migrator and retry."
+                )
+            }
+
+            emitProgress(onProgress, 0, "Detection", "Detecting browser engines...", 3)
+            val srcEngine = detectEngine(sourcePkg)
+            val dstEngine = detectEngine(targetPkg)
+
+            if (srcEngine != BrowserType.UNKNOWN &&
+                dstEngine != BrowserType.UNKNOWN &&
+                srcEngine != dstEngine
+            ) {
+                emitProgress(
+                    onProgress, 0, "Cross-engine",
+                    "Cross-engine transfer: ${srcEngine.name} -> ${dstEngine.name}", 6
+                )
+                return@withContext crossEngineMigrator.migrate(
+                    sourcePkg, targetPkg, srcEngine, dstEngine, onProgress
+                )
+            }
+
+            val engine = when {
+                srcEngine != BrowserType.UNKNOWN -> srcEngine
+                dstEngine != BrowserType.UNKNOWN -> dstEngine
+                else -> return@withContext MigrationResult.Failure(
+                    "Could not determine the browser engine for $sourcePkg or $targetPkg. " +
+                        "Open both browsers once and retry."
+                )
+            }
+
+            emitProgress(onProgress, 0, "Preparation", "Extracting scripts...", 5)
             if (!extractScripts()) {
                 return@withContext MigrationResult.Failure("Script extraction failed!")
             }
 
             extractSqlite3Binary()
-
-            val srcEngine = detectEngine(sourcePkg)
-            val dstEngine = detectEngine(targetPkg)
-
-            val engine = when {
-                srcEngine != BrowserType.UNKNOWN -> srcEngine
-                dstEngine != BrowserType.UNKNOWN -> dstEngine
-                else -> return@withContext MigrationResult.Failure("Could not determine engine type!")
-            }
 
             val scriptName = when (engine) {
                 BrowserType.GECKO -> "gecko_migrate.sh"
@@ -148,10 +173,12 @@ class DataMover(private val context: Context) {
     suspend fun listBackups(): List<Pair<String, String>> = withContext(Dispatchers.IO) {
         try {
             val res = RootHelper.exec("ls -d ${WORK_DIR}/backup_* 2>/dev/null | sort -r")
-            res.outputLines.map { path ->
-                val raw = path.substringAfterLast("backup_")
-                val date = raw.substring(0, 8).let { "${it.substring(0,4)}/${it.substring(4,6)}/${it.substring(6,8)}" }
-                val time = raw.substring(9).let { "${it.substring(0,2)}:${it.substring(2,4)}:${it.substring(4,6)}" }
+            val pattern = Regex("""backup_(\d{8})_(\d{6})""")
+            res.outputLines.mapNotNull { path ->
+                val match = pattern.find(path) ?: return@mapNotNull null
+                val (datePart, timePart) = match.destructured
+                val date = "${datePart.substring(0, 4)}/${datePart.substring(4, 6)}/${datePart.substring(6, 8)}"
+                val time = "${timePart.substring(0, 2)}:${timePart.substring(2, 4)}:${timePart.substring(4, 6)}"
                 path to "$date $time"
             }
         } catch (_: Exception) { emptyList() }
@@ -204,22 +231,46 @@ class DataMover(private val context: Context) {
 
     private suspend fun kotlinPatchChromium(srcPkg: String, dstPkg: String): List<JsonPatcher.PatchResult> {
         val results = mutableListOf<JsonPatcher.PatchResult>()
-        val dstBase = RootHelper.exec("for d in app_chrome app_chromium app_brave app_vivaldi; do [ -d \"/data/data/${dstPkg}/\$d\" ] && echo \"\$d\" && break; done").stdout.trim()
-        if (dstBase.isNotEmpty()) {
-            val path = "/data/data/${dstPkg}/$dstBase/Default"
-            results.add(jsonPatcher.neutralizeSecurePreferences("$path/Secure Preferences", srcPkg, dstPkg))
-            results.add(jsonPatcher.patchPreferences("$path/Preferences", srcPkg, dstPkg))
+        val dst = BrowserPaths.chromiumProfile(dstPkg)
+        if (dst != null) {
+            val dstBaseName = dst.baseDir.substringAfterLast('/')
+            results.add(
+                jsonPatcher.neutralizeSecurePreferences(
+                    dst.securePreferences, srcPkg, dstPkg
+                )
+            )
+            results.add(
+                jsonPatcher.patchPreferences(
+                    dst.preferences, srcPkg, dstPkg, dstBaseName, dstBaseName
+                )
+            )
+        } else {
+            results.add(JsonPatcher.PatchResult(false, "Could not locate Chromium profile for $dstPkg"))
         }
         return results
     }
 
     private suspend fun kotlinPatchGecko(srcPkg: String, dstPkg: String): List<JsonPatcher.PatchResult> {
         val results = mutableListOf<JsonPatcher.PatchResult>()
-        val dstProf = RootHelper.exec("p=\$(find /data/data/${dstPkg}/files/mozilla -maxdepth 1 -type d -name \"*.default*\" 2>/dev/null | head -1); echo \"\$p\"").stdout.trim()
-        val srcProf = RootHelper.exec("p=\$(find /data/data/${srcPkg}/files/mozilla -maxdepth 1 -type d -name \"*.default*\" 2>/dev/null | head -1); echo \"\$p\"").stdout.trim()
-        if (dstProf.isNotEmpty() && srcProf.isNotEmpty()) {
-            results.add(jsonPatcher.patchGeckoExtensionsJson("$dstProf/extensions.json", srcPkg, dstPkg, srcProf.substringAfterLast("/"), dstProf.substringAfterLast("/")))
-            results.add(jsonPatcher.syncGeckoUuids("$srcProf/prefs.js", "$dstProf/prefs.js"))
+        val dst = BrowserPaths.geckoProfile(dstPkg)
+        val src = BrowserPaths.geckoProfile(srcPkg)
+        val dstProfile = dst?.profileDir
+        val srcProfile = src?.profileDir
+        if (dstProfile != null && srcProfile != null) {
+            results.add(
+                jsonPatcher.patchGeckoExtensionsJson(
+                    "$dstProfile/extensions.json",
+                    srcPkg,
+                    dstPkg,
+                    srcProfile.substringAfterLast('/'),
+                    dstProfile.substringAfterLast('/')
+                )
+            )
+            results.add(
+                jsonPatcher.syncGeckoUuids("$srcProfile/prefs.js", "$dstProfile/prefs.js")
+            )
+        } else {
+            results.add(JsonPatcher.PatchResult(false, "Could not locate Gecko profile for $srcPkg/$dstPkg"))
         }
         return results
     }
@@ -267,5 +318,11 @@ class DataMover(private val context: Context) {
 
     private fun progressPct(p: Int, e: BrowserType) = if (e == BrowserType.GECKO) intArrayOf(12,22,45,70,85,92).getOrElse(p){92} else intArrayOf(8,22,38,52,62,75,85,92).getOrElse(p){95}
     private suspend fun emitProgress(cb: suspend (MigrationResult.Progress) -> Unit, ph: Int, nm: String, d: String, pct: Int) = withContext(Dispatchers.Main) { cb(MigrationResult.Progress(ph, nm, d, pct)) }
-    private fun buildResult(exit: Int, errs: List<String>, warns: List<String>, lines: List<String>) = if (exit == 0) MigrationResult.Success("Migration successful!", warns, LOG_FILE) else MigrationResult.Failure("Failed (exit=$exit)", lines.takeLast(10).joinToString("\n"), LOG_FILE)
+    private fun buildResult(exit: Int, errs: List<String>, warns: List<String>, lines: List<String>) =
+        if (exit == 0 && errs.isEmpty()) {
+            MigrationResult.Success("Migration successful!", warns, LOG_FILE)
+        } else {
+            val detail = (errs.take(6) + lines.takeLast(10)).joinToString("\n")
+            MigrationResult.Failure("Failed (exit=$exit)", detail, LOG_FILE)
+        }
 }

@@ -15,6 +15,53 @@ DST="$2"
 G_PROFILE=""
 G_DATA_DIR=""
 
+# Set by main() before the copy phases. Kept global so the helpers below can
+# resolve per-file locations: Fenix keeps places/cookies under files/, while
+# classic Firefox keeps them in the profile directory.
+G_SRC_PROFILE=""
+G_SRC_FILES=""
+G_DST_PROFILE=""
+G_DST_FILES=""
+G_DST_DB_DIR=""
+
+gecko_src_path() {
+    local name="$1"
+    if [ -n "$G_SRC_FILES" ] && [ -f "${G_SRC_FILES}/${name}" ]; then
+        echo "${G_SRC_FILES}/${name}"
+        return 0
+    fi
+    if [ -n "$G_SRC_PROFILE" ] && [ -f "${G_SRC_PROFILE}/${name}" ]; then
+        echo "${G_SRC_PROFILE}/${name}"
+        return 0
+    fi
+    return 1
+}
+
+gecko_dst_path() {
+    local name="$1"
+    if [ -n "$G_DST_DB_DIR" ] && [ -f "${G_DST_DB_DIR}/${name}" ]; then
+        echo "${G_DST_DB_DIR}/${name}"
+        return 0
+    fi
+    if [ -n "$G_DST_FILES" ] && [ -f "${G_DST_FILES}/${name}" ]; then
+        echo "${G_DST_FILES}/${name}"
+        return 0
+    fi
+    if [ -n "$G_DST_PROFILE" ] && [ -f "${G_DST_PROFILE}/${name}" ]; then
+        echo "${G_DST_PROFILE}/${name}"
+        return 0
+    fi
+    if [ -n "$G_DST_DB_DIR" ]; then
+        echo "${G_DST_DB_DIR}/${name}"
+        return 0
+    fi
+    if [ -n "$G_DST_FILES" ]; then
+        echo "${G_DST_FILES}/${name}"
+        return 0
+    fi
+    echo "${G_DST_PROFILE}/${name}"
+}
+
 # ============================================================
 #  DATA DIRECTORY + PROFILE DISCOVERY
 # ============================================================
@@ -38,14 +85,6 @@ find_gecko_profile() {
     if [ -z "$G_DATA_DIR" ]; then return 1; fi
 
     local dd="$G_DATA_DIR"
-
-    # Debug
-    log_info "--- $dd/files/ content ---"
-    if [ -d "$dd/files" ]; then
-        ls -la "$dd/files/" 2>/dev/null | while IFS= read -r line; do
-            log_info "  $line"
-        done
-    fi
 
     # 1. Search for profile under files/mozilla/
     local mozilla_dir="$dd/files/mozilla"
@@ -108,20 +147,51 @@ ensure_dst_profile() {
     fi
 
     log_info "Target profile missing, starting browser..."
-    local intent=$(cmd package resolve-activity --brief "$pkg" 2>/dev/null | tail -1)
-    if [ -n "$intent" ]; then
-        am start -n "$intent" >/dev/null 2>&1
-    else
-        monkey -p "$pkg" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
-    fi
-    sleep 10
-    stop_pkg "$pkg"
-    sleep 2
+    local attempt=1
+    while [ "$attempt" -le 3 ]; do
+        local intent
+        intent=$(cmd package resolve-activity --brief "$pkg" 2>/dev/null | tail -1)
+        if [ -n "$intent" ]; then
+            am start -n "$intent" >/dev/null 2>&1
+        else
+            log_info "Starting with monkey (attempt $attempt)"
+            monkey -p "$pkg" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+        fi
+        sleep 9
+        stop_pkg "$pkg"
+        sleep 2
 
-    find_gecko_profile "$pkg"
-    if [ -n "$G_PROFILE" ]; then
-        log_ok "Clean profile created: $G_PROFILE"
-        return 0
+        find_gecko_profile "$pkg"
+        if [ -n "$G_PROFILE" ]; then
+            log_ok "Clean profile created: $G_PROFILE"
+            return 0
+        fi
+        attempt=$((attempt + 1))
+    done
+
+    # Android may block background launches. Create the conventional profile
+    # directory; Firefox initialises it on the next launch.
+    local dd
+    dd=$(find_data_dir "$pkg")
+    if [ -n "$dd" ]; then
+        local md="${dd}/files/mozilla"
+        if [ ! -f "${md}/profiles.ini" ]; then
+            local name="migrator.$(date +%s).default"
+            mkdir -p "${md}/${name}" 2>/dev/null
+            cat > "${md}/profiles.ini" << INIEOF
+[Profile0]
+Name=default
+IsRelative=1
+Path=$name
+Default=1
+[General]
+StartWithLastProfile=1
+Version=2
+INIEOF
+            G_PROFILE="${md}/${name}"
+            log_warn "Browser did not create a profile; using empty profile: $G_PROFILE"
+            return 0
+        fi
     fi
 
     log_error "Could not create profile: $pkg"
@@ -182,11 +252,29 @@ main() {
     log_ok "Target files: $dst_files"
     local dst_name=$(basename "$dst_profile")
 
+    G_SRC_PROFILE="$src_profile"
+    G_SRC_FILES="$src_files"
+    G_DST_PROFILE="$dst_profile"
+    G_DST_FILES="$dst_files"
+
+    # Fenix stores its databases in files/; classic Gecko stores them in the
+    # profile. Follow whichever layout the target already uses.
+    if [ -f "${dst_files}/places.sqlite" ]; then
+        G_DST_DB_DIR="$dst_files"
+    elif [ -f "${dst_profile}/places.sqlite" ]; then
+        G_DST_DB_DIR="$dst_profile"
+    else
+        G_DST_DB_DIR="$dst_files"
+    fi
+    log_info "Target database directory: $G_DST_DB_DIR"
+
     # Backup
     log_info "Backing up target..."
     mkdir -p "${BACKUP_DIR}/target_files" 2>/dev/null
     cp -rf "$dst_files/." "${BACKUP_DIR}/target_files/" 2>/dev/null
-    save_manifest "$DST" "GECKO" "$dst_profile"
+    mkdir -p "${BACKUP_DIR}/target_shared_prefs" 2>/dev/null
+    cp -rf "${dst_dd}/shared_prefs/." "${BACKUP_DIR}/target_shared_prefs/" 2>/dev/null || true
+    save_manifest "$DST" "GECKO" "$dst_profile" "$dst_dd" "" "files"
     log_ok "Backup: $BACKUP_DIR"
 
     stop_pkg "$DST"
@@ -196,36 +284,33 @@ main() {
     log_info "PHASE 2: FILES-LEVEL DATA"
 
     # --- places.sqlite (History + Bookmarks) ---
-    if [ -f "${src_files}/places.sqlite" ]; then
-        log_info "places.sqlite in files/ (Fenix)"
-        safe_cp "${src_files}/places.sqlite"     "${dst_files}/places.sqlite"     "places.sqlite (files/)"
-        safe_cp "${src_files}/places.sqlite-wal"  "${dst_files}/places.sqlite-wal"  "places.sqlite-wal (files/)"
-        safe_cp "${src_files}/places.sqlite-shm"  "${dst_files}/places.sqlite-shm"  "places.sqlite-shm (files/)"
-    elif [ -f "${src_profile}/places.sqlite" ]; then
-        log_info "places.sqlite in profile (classic)"
-        safe_cp "${src_profile}/places.sqlite"     "${dst_profile}/places.sqlite"     "places.sqlite (profile)"
-        safe_cp "${src_profile}/places.sqlite-wal"  "${dst_profile}/places.sqlite-wal"  "places.sqlite-wal (profile)"
-        safe_cp "${src_profile}/places.sqlite-shm"  "${dst_profile}/places.sqlite-shm"  "places.sqlite-shm (profile)"
+    local src_places dst_places
+    src_places=$(gecko_src_path "places.sqlite" 2>/dev/null || true)
+    if [ -n "$src_places" ]; then
+        dst_places=$(gecko_dst_path "places.sqlite")
+        log_info "places.sqlite: $src_places -> $dst_places"
+        copy_db_with_sidecars "$src_places" "$dst_places" "places.sqlite"
     fi
 
     # --- logins.json + key4.db (Passwords) ---
-    if [ -f "${src_files}/logins.json" ]; then
-        safe_cp "${src_files}/logins.json" "${dst_files}/logins.json" "logins.json (files/)"
-    elif [ -f "${src_profile}/logins.json" ]; then
-        safe_cp "${src_profile}/logins.json" "${dst_profile}/logins.json" "logins.json (profile)"
-    fi
-
-    if [ -f "${src_files}/key4.db" ]; then
-        safe_cp "${src_files}/key4.db" "${dst_files}/key4.db" "key4.db (files/)"
-    elif [ -f "${src_profile}/key4.db" ]; then
-        safe_cp "${src_profile}/key4.db" "${dst_profile}/key4.db" "key4.db (profile)"
-    fi
+    local src_file dst_file
+    for name in logins.json key4.db; do
+        src_file=$(gecko_src_path "$name" 2>/dev/null || true)
+        if [ -n "$src_file" ]; then
+            dst_file=$(gecko_dst_path "$name")
+            if [ "$name" = "key4.db" ]; then
+                copy_db_with_sidecars "$src_file" "$dst_file" "$name"
+            else
+                safe_cp "$src_file" "$dst_file" "$name"
+            fi
+        fi
+    done
 
     # --- tabs.sqlite (Tabs) ---
-    if [ -f "${src_files}/tabs.sqlite" ]; then
-        safe_cp "${src_files}/tabs.sqlite"     "${dst_files}/tabs.sqlite"     "tabs.sqlite"
-        safe_cp "${src_files}/tabs.sqlite-wal"  "${dst_files}/tabs.sqlite-wal"  "tabs.sqlite-wal"
-        safe_cp "${src_files}/tabs.sqlite-shm"  "${dst_files}/tabs.sqlite-shm"  "tabs.sqlite-shm"
+    src_file=$(gecko_src_path "tabs.sqlite" 2>/dev/null || true)
+    if [ -n "$src_file" ]; then
+        dst_file=$(gecko_dst_path "tabs.sqlite")
+        copy_db_with_sidecars "$src_file" "$dst_file" "tabs.sqlite"
     fi
 
     # --- Session data (Fenix tab state) ---
@@ -237,7 +322,11 @@ main() {
     fi
 
     # --- push.sqlite ---
-    safe_cp "${src_files}/push.sqlite" "${dst_files}/push.sqlite" "push.sqlite"
+    src_file=$(gecko_src_path "push.sqlite" 2>/dev/null || true)
+    if [ -n "$src_file" ]; then
+        dst_file=$(gecko_dst_path "push.sqlite")
+        copy_db_with_sidecars "$src_file" "$dst_file" "push.sqlite"
+    fi
 
     # --- Other files-level files ---
     for f in "nimbus_messages_metadata.json" "profileInstalled" "mozilla_components_service_mars_tiles.json"; do
@@ -248,14 +337,16 @@ main() {
     log_info "PHASE 3: PROFILE-LEVEL DATA"
 
     for f in \
-        favicons.sqlite favicons.sqlite-wal favicons.sqlite-shm \
+        favicons.sqlite \
         formhistory.sqlite \
-        cookies.sqlite cookies.sqlite-wal cookies.sqlite-shm \
+        cookies.sqlite \
         cert9.db permissions.sqlite content-prefs.sqlite \
         webappsstore.sqlite \
     ; do
-        if [ -f "${src_profile}/${f}" ]; then
-            safe_cp "${src_profile}/${f}" "${dst_profile}/${f}" "$f"
+        src_file=$(gecko_src_path "$f" 2>/dev/null || true)
+        if [ -n "$src_file" ]; then
+            dst_file=$(gecko_dst_path "$f")
+            copy_db_with_sidecars "$src_file" "$dst_file" "$f"
         fi
     done
 
@@ -356,7 +447,7 @@ main() {
     local uid=$(get_uid "$DST")
     if [ -n "$uid" ]; then
         fix_perms "${dst_dd}/files" "$uid"
-        fix_perms "${dst_dd}/shared_prefs" "$uid"
+        [ -d "${dst_dd}/shared_prefs" ] && fix_perms "${dst_dd}/shared_prefs" "$uid"
     fi
 
     stop_pkg "$DST"

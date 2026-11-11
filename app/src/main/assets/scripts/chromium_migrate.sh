@@ -28,7 +28,10 @@ find_chromium_base() {
         return 1
     fi
 
-    for d in app_chrome app_chromium app_brave app_vivaldi; do
+    for d in \
+        app_chrome app_chromium app_brave app_vivaldi app_edge \
+        app_sbrowser app_kiwi app_opera app_ddg app_yandex app_mi app_quark \
+    ; do
         if [ -d "${dd}/${d}" ]; then
             G_BASE="${dd}/${d}"
             log_ok "Chromium base: $G_BASE"
@@ -36,9 +39,19 @@ find_chromium_base() {
         fi
     done
 
-    # Broad search: Look for Bookmarks or History files
+    # Profile directly under the data dir (some Chromium forks do this).
+    if [ -d "${dd}/Default" ]; then
+        G_BASE="$dd"
+        log_ok "Chromium base: $G_BASE"
+        return 0
+    fi
+
+    # Broad search: look for real profile files, not only Bookmarks (a fresh
+    # Chrome install creates History/Preferences before it ever creates Bookmarks).
     local found
-    found=$(find "$dd" -name "Bookmarks" -type f 2>/dev/null | head -1)
+    found=$(find "$dd" -maxdepth 4 -type f \
+        \( -name "History" -o -name "Bookmarks" -o -name "Preferences" \) \
+        2>/dev/null | head -1)
     if [ -n "$found" ]; then
         G_BASE=$(dirname "$(dirname "$found")")
         log_ok "Chromium base (search): $G_BASE"
@@ -56,27 +69,48 @@ find_chromium_profile() {
     G_PROFILE=""
     if [ -z "$base" ]; then return 1; fi
 
-    if [ -d "${base}/Default" ]; then
-        G_PROFILE="${base}/Default"
+    # Pick the profile that contains the most real data. Chrome can have
+    # Default, Profile 1, Profile 2, ... and "Default" is not always the one
+    # the user actually uses.
+    local best="" best_score=-1 d f score
+    for d in "$base"/Default "$base"/Profile*; do
+        [ -d "$d" ] || continue
+        score=0
+        for f in History Bookmarks Preferences "Login Data" "Web Data"; do
+            if [ -f "$d/$f" ]; then
+                score=$((score + $(stat -c '%s' "$d/$f" 2>/dev/null || echo 0)))
+            fi
+        done
+        if [ "$score" -gt "$best_score" ]; then
+            best="$d"
+            best_score="$score"
+        fi
+    done
+
+    if [ -z "$best" ] && [ -d "${base}/Default" ]; then
+        best="${base}/Default"
+    fi
+
+    if [ -n "$best" ]; then
+        G_PROFILE="$best"
+        log_ok "Chromium profile: $G_PROFILE"
         return 0
     fi
 
-    for d in "${base}"/*/; do
-        [ ! -d "$d" ] && continue
-        if [ -f "${d}History" ] || [ -f "${d}Bookmarks" ]; then
-            G_PROFILE="${d%/}"
-            return 0
-        fi
-    done
-
-    for d in "${base}"/*/; do
-        if [ -d "$d" ]; then
-            G_PROFILE="${d%/}"
-            return 0
-        fi
-    done
-
     return 1
+}
+
+guess_chromium_base() {
+    case "$1" in
+        *brave*) echo "app_brave" ;;
+        *vivaldi*) echo "app_vivaldi" ;;
+        *emmx*|*edge*) echo "app_edge" ;;
+        *sbrowser*) echo "app_sbrowser" ;;
+        *kiwi*) echo "app_kiwi" ;;
+        *opera*) echo "app_opera" ;;
+        *duckduckgo*) echo "app_ddg" ;;
+        *) echo "app_chrome" ;;
+    esac
 }
 
 ensure_chromium_profile() {
@@ -91,26 +125,48 @@ ensure_chromium_profile() {
     fi
 
     log_info "Target profile missing, starting browser..."
-    local intent
-    intent=$(cmd package resolve-activity --brief "$pkg" 2>/dev/null | tail -1)
-    if [ -n "$intent" ]; then
-        am start -n "$intent" >/dev/null 2>&1
-    else
-        log_info "Starting with monkey"
-        monkey -p "$pkg" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
-    fi
-    sleep 10
-    stop_pkg "$pkg"
-    sleep 2
+    local attempt=1
+    while [ "$attempt" -le 3 ]; do
+        local intent
+        intent=$(cmd package resolve-activity --brief "$pkg" 2>/dev/null | tail -1)
+        if [ -n "$intent" ]; then
+            am start -n "$intent" >/dev/null 2>&1
+        else
+            log_info "Starting with monkey (attempt $attempt)"
+            monkey -p "$pkg" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+        fi
+        sleep 8
+        stop_pkg "$pkg"
+        sleep 2
 
-    find_chromium_base "$pkg"
-    if [ -z "$G_BASE" ]; then
-        log_error "Chromium base still not found: $pkg"
-        G_PROFILE=""
-        return 1
+        find_chromium_base "$pkg"
+        if [ -n "$G_BASE" ]; then
+            find_chromium_profile "$G_BASE"
+            if [ -n "$G_PROFILE" ]; then
+                log_ok "Target profile created by browser: $G_PROFILE"
+                return 0
+            fi
+        fi
+        attempt=$((attempt + 1))
+    done
+
+    # The browser may be blocked from starting in the background (Android 10+).
+    # A conventional empty profile is enough: the migration fills it and the
+    # browser initialises the rest on its next launch.
+    local dd
+    dd=$(find_data_dir "$pkg")
+    if [ -n "$dd" ]; then
+        local base="${dd}/$(guess_chromium_base "$pkg")"
+        mkdir -p "${base}/Default" 2>/dev/null
+        G_BASE="$base"
+        G_PROFILE="${base}/Default"
+        log_warn "Browser did not create a profile; using empty profile: $G_PROFILE"
+        return 0
     fi
-    find_chromium_profile "$G_BASE"
-    return 0
+
+    log_error "Chromium base still not found: $pkg"
+    G_PROFILE=""
+    return 1
 }
 
 # ============================================================
@@ -153,6 +209,8 @@ main() {
     ensure_chromium_profile "$DST"
     local dst_profile="$G_PROFILE"
     local dst_base="$G_BASE"
+    local dst_dd
+    dst_dd=$(find_data_dir "$DST")
 
     if [ -z "$dst_profile" ] || [ -z "$dst_base" ]; then
         log_error "Target preparation failed!"
@@ -163,7 +221,9 @@ main() {
     # Backup
     mkdir -p "${BACKUP_DIR}/target_original_profile" 2>/dev/null
     cp -rf "$dst_profile/." "${BACKUP_DIR}/target_original_profile/" 2>/dev/null
-    save_manifest "$DST" "CHROMIUM" "$dst_profile"
+    mkdir -p "${BACKUP_DIR}/target_local_state" 2>/dev/null
+    cp -f "${dst_base}/Local State" "${BACKUP_DIR}/target_local_state/Local State" 2>/dev/null || true
+    save_manifest "$DST" "CHROMIUM" "$dst_profile" "$dst_dd" "$dst_base" "profile"
 
     stop_pkg "$DST"
     sleep 1
@@ -174,16 +234,31 @@ main() {
     safe_cp "${src_profile}/Preferences" "${dst_profile}/Preferences" "Preferences"
     safe_cp "${src_profile}/Secure Preferences" "${dst_profile}/Secure Preferences" "Secure Preferences"
 
+    # Chrome moved cookies to Default/Network/Cookies years ago. Copy both the
+    # modern and legacy locations so newer and older forks both work.
+    for f in "Network/Cookies" "Cookies"; do
+        copy_db_with_sidecars "${src_profile}/${f}" "${dst_profile}/${f}" "$f"
+    done
+
+    safe_cp "${src_profile}/Bookmarks" "${dst_profile}/Bookmarks" "Bookmarks"
+
     for f in \
-        Bookmarks History "Login Data" "Web Data" \
-        Cookies Favicons "Top Sites" Shortcuts \
+        History "Login Data" "Web Data" \
+        Favicons "Top Sites" Shortcuts \
         "Network Action Predictor" \
     ; do
-        safe_cp "${src_profile}/${f}" "${dst_profile}/${f}" "$f"
-        for sfx in "-journal" "-wal" "-shm"; do
-            safe_cp "${src_profile}/${f}${sfx}" "${dst_profile}/${f}${sfx}" "${f}${sfx}"
-        done
+        copy_db_with_sidecars "${src_profile}/${f}" "${dst_profile}/${f}" "$f"
     done
+
+    # Chrome writes Bookmarks.bak on the first edit. If Bookmarks is absent
+    # (fresh sync, interrupted write), the .bak is still a valid source.
+    if [ ! -f "${dst_profile}/Bookmarks" ] && [ -f "${src_profile}/Bookmarks.bak" ]; then
+        safe_cp "${src_profile}/Bookmarks.bak" "${dst_profile}/Bookmarks" "Bookmarks (from .bak)"
+    fi
+
+    # A stale target .bak can make Chromium discard the newly written
+    # Bookmarks file on next launch. The original is already in BACKUP_DIR.
+    rm -f "${dst_profile}/Bookmarks.bak" "${dst_profile}/Bookmarks.tmp" 2>/dev/null
 
     # ---- PHASE 2 ----
     log_info "PHASE 2: EXTENSION MIGRATION"
@@ -226,7 +301,9 @@ main() {
     done
 
     if [ -f "${dst_profile}/Secure Preferences" ]; then
-        sed -i '/"super_mac"/d' "${dst_profile}/Secure Preferences" 2>/dev/null
+        # Keep the file valid JSON. Deleting lines would blank a minified file;
+        # an empty HMAC makes Chromium reset its protected preferences safely.
+        sed -i 's/"super_mac":"[^"]*"/"super_mac":""/g' "${dst_profile}/Secure Preferences" 2>/dev/null
         sed -i 's/"mac":"[^"]*"/"mac":""/g' "${dst_profile}/Secure Preferences" 2>/dev/null
         log_ok "Secure Prefs HMAC cleaned"
     fi
@@ -258,7 +335,7 @@ main() {
             [ $patched -gt 0 ] && log_ok "SQLite: $db_name ($patched)"
         done
     else
-        log_warn "sqlite3 not found, SQLite patching skipped"
+        log_info "sqlite3 not found, advanced SQLite path rewriting skipped (data is still copied)"
     fi
 
     # ---- PHASE 5 ----

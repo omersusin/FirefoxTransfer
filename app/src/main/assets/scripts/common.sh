@@ -126,7 +126,7 @@ check_sqlite3() {
         return 0
     fi
 
-    log_warn "sqlite3 not found — SQLite patching skipped"
+    log_info "sqlite3 not found — advanced SQLite path rewriting skipped (data is still copied)"
     SQLITE3_BIN=""
     return 1
 }
@@ -191,7 +191,9 @@ safe_cp() {
     local src="$1" dst="$2" desc="$3"
 
     if [ ! -e "$src" ]; then
-        log_warn "Missing, skipping: $desc"
+        # Optional files are normal to miss (Secure Preferences, Login Data,
+        # extension folders, ...). Do not turn every one into a scary warning.
+        log_info "Not present, skipped: $desc"
         return 1
     fi
 
@@ -217,6 +219,31 @@ safe_cp() {
     fi
 }
 
+# Remove target-side WAL/journal files while the browser is stopped. If a
+# source DB has no matching sidecar, leaving an old target sidecar behind can
+# make SQLite replay stale pages against the newly copied database.
+remove_sidecars() {
+    local path="$1"
+    rm -f "${path}-wal" "${path}-shm" "${path}-journal" 2>/dev/null || true
+}
+
+# Copy a SQLite database and whichever sidecars actually exist in the source.
+copy_db_with_sidecars() {
+    local src="$1" dst="$2" desc="$3" sfx
+    if [ ! -e "$src" ]; then
+        log_info "Not present, skipped: $desc"
+        return 1
+    fi
+
+    remove_sidecars "$dst"
+    safe_cp "$src" "$dst" "$desc"
+    for sfx in "-wal" "-shm" "-journal"; do
+        if [ -e "${src}${sfx}" ]; then
+            safe_cp "${src}${sfx}" "${dst}${sfx}" "${desc}${sfx}"
+        fi
+    done
+}
+
 # ============================================================
 #  PERMISSIONS
 # ============================================================
@@ -240,13 +267,119 @@ fix_perms() {
 # ============================================================
 save_manifest() {
     if [ -n "$BACKUP_DIR" ]; then
+        local target="$1"
+        local engine="$2"
+        local profile="$3"
+        local data_dir="${4:-}"
+        local base_dir="${5:-}"
+        local kind="${6:-profile}"
         cat > "${BACKUP_DIR}/manifest.txt" << MFEOF
-TARGET=$1
-ENGINE=$2
-PROFILE=$3
+TARGET=$target
+TARGET_PACKAGE=$target
+ENGINE=$engine
+PROFILE=$profile
+TARGET_PROFILE=$profile
+DATA_DIR=$data_dir
+TARGET_DATA_DIR=$data_dir
+BASE_DIR=$base_dir
+TARGET_BASE=$base_dir
+BACKUP_KIND=$kind
 DATE=$(date)
 MFEOF
     fi
+}
+
+# ============================================================
+#  ROLLBACK
+# ============================================================
+perform_rollback() {
+    local backup_dir="$1"
+    local manifest="${backup_dir}/manifest.txt"
+    [ -f "$manifest" ] || manifest="${backup_dir}/rollback_manifest.txt"
+    if [ ! -f "$manifest" ]; then
+        log_error "Rollback manifest not found in $backup_dir"
+        return 1
+    fi
+
+    local target_pkg engine target_profile target_data_dir backup_kind target_base
+    target_pkg=$(grep -m1 '^TARGET_PACKAGE=' "$manifest" | cut -d'=' -f2-)
+    [ -z "$target_pkg" ] && target_pkg=$(grep -m1 '^TARGET=' "$manifest" | cut -d'=' -f2-)
+    engine=$(grep -m1 '^ENGINE=' "$manifest" | cut -d'=' -f2-)
+    target_profile=$(grep -m1 '^TARGET_PROFILE=' "$manifest" | cut -d'=' -f2-)
+    [ -z "$target_profile" ] && target_profile=$(grep -m1 '^PROFILE=' "$manifest" | cut -d'=' -f2-)
+    target_data_dir=$(grep -m1 '^TARGET_DATA_DIR=' "$manifest" | cut -d'=' -f2-)
+    [ -z "$target_data_dir" ] && target_data_dir=$(grep -m1 '^DATA_DIR=' "$manifest" | cut -d'=' -f2-)
+    target_base=$(grep -m1 '^TARGET_BASE=' "$manifest" | cut -d'=' -f2-)
+    [ -z "$target_base" ] && target_base=$(grep -m1 '^BASE_DIR=' "$manifest" | cut -d'=' -f2-)
+    backup_kind=$(grep -m1 '^BACKUP_KIND=' "$manifest" | cut -d'=' -f2-)
+
+    if [ -z "$target_pkg" ]; then
+        log_error "Rollback manifest has no target package"
+        return 1
+    fi
+
+    local restore_from restore_to
+    if [ "$engine" = "GECKO" ] || [ "$backup_kind" = "files" ]; then
+        restore_from="${backup_dir}/target_files"
+        [ -d "$restore_from" ] || restore_from="${backup_dir}/target_original_files"
+        if [ -z "$target_data_dir" ] && [ -n "$target_profile" ]; then
+            # .../files/mozilla/<profile> -> /data/data/<pkg>
+            target_data_dir=$(dirname "$(dirname "$(dirname "$target_profile")")")
+        fi
+        restore_to="${target_data_dir}/files"
+    else
+        restore_from="${backup_dir}/target_original_profile"
+        [ -d "$restore_from" ] || restore_from="${backup_dir}/target_profile"
+        restore_to="$target_profile"
+    fi
+
+    if [ ! -d "$restore_from" ] || [ -z "$restore_to" ]; then
+        log_error "Backup payload missing for $target_pkg"
+        return 1
+    fi
+
+    log_info "Restoring $target_pkg from $restore_from"
+    stop_pkg "$target_pkg"
+    rm -rf "$restore_to" 2>/dev/null
+    mkdir -p "$restore_to" 2>/dev/null
+    if ! cp -rf "${restore_from}/." "${restore_to}/" 2>/dev/null; then
+        log_error "Could not copy backup back to $restore_to"
+        return 1
+    fi
+
+    if [ "$engine" = "GECKO" ] || [ "$backup_kind" = "files" ]; then
+        if [ -d "${backup_dir}/target_shared_prefs" ] && [ -n "$target_data_dir" ]; then
+            rm -rf "${target_data_dir}/shared_prefs" 2>/dev/null
+            mkdir -p "${target_data_dir}/shared_prefs" 2>/dev/null
+            cp -rf "${backup_dir}/target_shared_prefs/." \
+                "${target_data_dir}/shared_prefs/" 2>/dev/null || true
+        fi
+    else
+        if [ -z "$target_base" ] && [ -n "$target_profile" ]; then
+            target_base=$(dirname "$target_profile")
+        fi
+        if [ -n "$target_base" ] && [ -f "${backup_dir}/target_local_state/Local State" ]; then
+            cp -f "${backup_dir}/target_local_state/Local State" \
+                "${target_base}/Local State" 2>/dev/null || true
+        fi
+    fi
+
+    local uid
+    uid=$(get_uid "$target_pkg")
+    if [ -n "$uid" ]; then
+        fix_perms "$restore_to" "$uid"
+        if [ "$engine" = "GECKO" ] || [ "$backup_kind" = "files" ]; then
+            [ -d "${target_data_dir}/shared_prefs" ] && \
+                fix_perms "${target_data_dir}/shared_prefs" "$uid"
+        elif [ -n "$target_base" ] && [ -f "${target_base}/Local State" ]; then
+            chown "${uid}:${uid}" "${target_base}/Local State" 2>/dev/null
+            chmod 600 "${target_base}/Local State" 2>/dev/null
+        fi
+    else
+        log_warn "Could not determine UID for $target_pkg; permissions not changed"
+    fi
+    log_ok "Rollback completed for $target_pkg"
+    return 0
 }
 
 log_info "common.sh v3 loaded"
