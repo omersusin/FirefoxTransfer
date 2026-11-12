@@ -122,7 +122,8 @@ shelling out to `sqlite3`, which is missing on many Android systems.
   tabs are opened.
 - Extensions are inventoried, not transplanted. Chromium CRX/unpacked MV2/MV3
   packages and Gecko XPI packages, plus their private storage, are incompatible.
-  The report gives store search links and data paths for manual reinstallation.
+  The report gives store search links and data paths for manual reinstallation;
+  a `extension_data_*.tar.gz` archive is also exported for manual recovery.
 - After a cross-engine transfer, launch the target browser once more so it can
   finish rebuilding its caches/favicons.
 

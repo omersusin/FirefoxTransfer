@@ -3,7 +3,6 @@ package com.browsermover.app.core
 import android.database.sqlite.SQLiteDatabase
 import com.browsermover.app.root.RootHelper
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 
 /**
@@ -302,7 +301,7 @@ internal object TabMigrator {
     private fun parseGeckoSession(bytes: ByteArray): ReadResult {
         return try {
             val jsonBytes = decodeMozLz4(bytes) ?: bytes
-            val text = String(jsonBytes, StandardCharsets.UTF_8)
+            val text = String(jsonBytes, StandardCharsets.UTF_8).removePrefix("\uFEFF")
             val root = JSONObject(text)
             val windows = root.optJSONArray("windows") ?: return ReadResult(
                 emptyList(), "Gecko session has no windows array."

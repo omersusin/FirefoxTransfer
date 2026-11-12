@@ -354,10 +354,24 @@ class CrossEngineMigrator(private val context: Context) {
                 "$WORK_DIR/extension_report_$stamp.html"
             )
             warnings.addAll(report.warnings)
+            val archive = exportExtensionData(
+                sourceEngine, sourceChromium, sourceGecko, stamp
+            )
+            if (archive != null) {
+                warnings.add(
+                    "Extension data archive: $archive (manual export only; cross-engine storage formats differ)"
+                )
+            }
             val path = htmlPath ?: jsonPath
             if (path != null) {
-                warnings.add("Extension report: $path")
-                "Extension report: $path"
+                warnings.add(
+                    "Extension report: $path (also copied to $PUBLIC_REPORT_DIR when writable)"
+                )
+                if (archive != null) {
+                    "Extension report: $path (archive: $archive)"
+                } else {
+                    "Extension report: $path"
+                }
             } else {
                 warnings.add("Could not write the extension report to $WORK_DIR.")
                 null
@@ -366,6 +380,45 @@ class CrossEngineMigrator(private val context: Context) {
             warnings.add("Extension inventory failed: ${e.message}")
             null
         }
+    }
+
+    private suspend fun exportExtensionData(
+        engine: BrowserType,
+        chromium: ChromiumProfile?,
+        gecko: GeckoProfile?,
+        stamp: String
+    ): String? {
+        val base = when (engine) {
+            BrowserType.CHROMIUM -> chromium?.profileDir
+            BrowserType.GECKO -> gecko?.profileDir ?: gecko?.filesDir
+            else -> null
+        } ?: return null
+        val archive = "$WORK_DIR/extension_data_$stamp.tar.gz"
+        val items = when (engine) {
+            BrowserType.CHROMIUM -> listOf(
+                "Local Extension Settings",
+                "Sync Extension Settings",
+                "Extension State",
+                "Extension Rules",
+                "IndexedDB/chrome-extension_*"
+            )
+            BrowserType.GECKO -> listOf(
+                "extensions.json",
+                "extension-preferences.json",
+                "browser-extension-data",
+                "storage/default/moz-extension+++*"
+            )
+            else -> return null
+        }
+        val command = "cd ${BrowserPaths.q(base)} 2>/dev/null && " +
+            "command -v tar >/dev/null 2>&1 && " +
+            "tar -czf ${BrowserPaths.q(archive)} ${items.joinToString(" ")} " +
+            "2>/dev/null; " +
+            "if [ -s ${BrowserPaths.q(archive)} ]; then " +
+            "cp -f ${BrowserPaths.q(archive)} ${BrowserPaths.q(PUBLIC_REPORT_DIR)}/ " +
+            "2>/dev/null || true; fi"
+        RootHelper.exec(command)
+        return if (BrowserPaths.exists(archive)) archive else null
     }
 
     private suspend fun writeWorkText(content: String, target: String): String? {

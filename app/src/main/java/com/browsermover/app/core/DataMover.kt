@@ -92,7 +92,9 @@ class DataMover(private val context: Context) {
 
             if (!RootHelper.checkRoot()) {
                 return@withContext MigrationResult.Failure(
-                    "Root access is required. Grant root permission to Browser Data Migrator and retry."
+                    "Root access is required. Grant root permission to Browser Data Migrator, " +
+                        "or use a Shizuku server started with root (Shizuku's ADB/UID 2000 backend " +
+                        "cannot read app-private browser data)."
                 )
             }
 
