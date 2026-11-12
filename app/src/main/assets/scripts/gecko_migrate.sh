@@ -1,6 +1,6 @@
 #!/system/bin/sh
 # ============================================================
-#  gecko_migrate.sh v5
+#  gecko_migrate.sh v6
 #  Fenix fix: DBs and tabs under files/
 # ============================================================
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
@@ -205,7 +205,7 @@ main() {
     log_init
 
     log_info "============================================"
-    log_info "  Gecko Migration v5 (Fenix compatible)"
+    log_info "  Gecko Migration v6 (Fenix compatible)"
     log_info "  Source: $SRC"
     log_info "  Target: $DST"
     log_info "============================================"
@@ -313,12 +313,43 @@ main() {
         copy_db_with_sidecars "$src_file" "$dst_file" "tabs.sqlite"
     fi
 
-    # --- Session data (Fenix tab state) ---
-    # SKIPPED — Fenix/Iceraven version incompatibility in JSON format
-    # causes crashes. tabs.sqlite already carries tab data.
-    # Target browser recreates session from tabs.sqlite on first launch.
-    if [ -f "${src_files}/mozilla_components_session_storage_gecko.json" ]; then
-        log_warn "Session JSON skipped (version incompatibility prevention)"
+    # --- Open-tab session storage (Fenix/Firefox Android) ---
+    # tabs.sqlite is not the live tab session. Fenix stores the open-tab
+    # session in mozilla_components_session_storage_gecko.json, and some
+    # builds also have sessionstore.jsonlz4. Without these files the target
+    # starts with an empty tab tray even though tabs.sqlite was copied.
+    #
+    # The old v5 script skipped this file because an old Iceraven/Gecko build
+    # crashed on a mismatched JSON schema. Keep the guard for those legacy
+    # targets, but copy it for current Fenix/Firefox Beta profiles.
+    local session_skip=0
+    case "$SRC $DST" in
+        *iceraven*|*Iceraven*|*fennec*|*Fennec*|*tor*|*Tor*) session_skip=1 ;;
+    esac
+
+    # Remove the target's stale session before installing the source session.
+    rm -f "${dst_profile}/sessionstore.jsonlz4" 2>/dev/null
+    rm -rf "${dst_profile}/sessionstore-backups" 2>/dev/null
+
+    if [ "$session_skip" -eq 1 ]; then
+        log_warn "Open-tab session JSON skipped for legacy Gecko target"
+    else
+        local src_session="${src_files}/mozilla_components_session_storage_gecko.json"
+        if [ -f "$src_session" ]; then
+            local dst_session="${dst_files}/mozilla_components_session_storage_gecko.json"
+            safe_cp "$src_session" "$dst_session" "open-tab session storage"
+            if [ -f "$dst_session" ]; then
+                sed -i "s|${src_dd}|${dst_dd}|g; s|${src_profile}|${dst_profile}|g; s|${SRC}|${DST}|g"                     "$dst_session" 2>/dev/null || true
+                log_ok "Open-tab session paths patched"
+            fi
+        else
+            log_info "Open-tab session storage not present in source"
+        fi
+
+        # Fallback for builds that still use a jsonlz4 sessionstore.
+        if [ -f "${src_profile}/sessionstore.jsonlz4" ]; then
+            safe_cp "${src_profile}/sessionstore.jsonlz4"                     "${dst_profile}/sessionstore.jsonlz4" "sessionstore.jsonlz4"
+        fi
     fi
 
     # --- push.sqlite ---
@@ -412,11 +443,32 @@ main() {
     local dst_sp="${dst_dd}/shared_prefs"
     if [ -d "$src_sp" ]; then
         mkdir -p "$dst_sp" 2>/dev/null
+        local skipped_account=0
         for f in "$src_sp"/*; do
             [ ! -f "$f" ] && continue
             local fname=$(basename "$f")
+
+            # Firefox Account/Sync state and Android Keystore-bound crypto
+            # preferences cannot be transplanted between packages. Copying
+            # them makes the target look signed-in with undecryptable tokens
+            # and can leave it stuck on the account screen. Keep the target's
+            # own files and let the user sign in again.
+            case "$fname" in
+                Fxa*|fxa*|SyncAuthInfoCache.xml|syncPrefs.xml|syncEngines.xml|sync.logins.prefs.xml|mozac_feature_accounts_push.xml|*Crypto.xml)
+                    skipped_account=$((skipped_account + 1))
+                    continue
+                    ;;
+                "${DST}_preferences.xml")
+                    # This is the target's own settings file. Preserve it.
+                    continue
+                    ;;
+            esac
+
             safe_cp "$f" "${dst_sp}/${fname}" "shared_pref: $fname"
         done
+        if [ "$skipped_account" -gt 0 ]; then
+            log_warn "Firefox Account/Keystore prefs not copied ($skipped_account files). Sign in again in the target."
+        fi
     fi
 
     safe_cp "${src_files}/firefox.settings.services.mozilla.com" "${dst_files}/firefox.settings.services.mozilla.com" "sync settings"
@@ -439,8 +491,6 @@ main() {
     rm -f  "${dst_profile}/addonStartup.json.lz4" 2>/dev/null
     rm -rf "${dst_profile}/startupCache" 2>/dev/null
     rm -f  "${dst_profile}/compatibility.ini" 2>/dev/null
-    rm -f  "${dst_profile}/sessionstore.jsonlz4" 2>/dev/null
-    rm -rf "${dst_profile}/sessionstore-backups" 2>/dev/null
 
     rm -rf "${dst_dd}/cache" "${dst_dd}/cache2" "${dst_dd}/code_cache" 2>/dev/null
 
@@ -451,7 +501,7 @@ main() {
     fi
 
     stop_pkg "$DST"
-    log_ok "GECKO MIGRATION COMPLETED! (v5)"
+    log_ok "GECKO MIGRATION COMPLETED! (v6)"
 }
 
 if [ -z "$SRC" ] || [ -z "$DST" ]; then

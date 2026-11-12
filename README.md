@@ -117,9 +117,15 @@ shelling out to `sqlite3`, which is missing on many Android systems.
 - Only `http`, `https`, and `ftp` URLs are migrated.
 - Passwords and cookies are not moved between engines because their storage and
   encryption are engine-specific.
-- Open tabs are restored as URLs, not binary session files. Tab groups, pinned
-  state and per-tab back/forward history are not preserved. Up to 30 HTTP(S)
-  tabs are opened.
+- Firefox Account/Sync sign-in state is Android Keystore-bound. It is deliberately
+  not copied between packages; sign in again in the target so Firefox Sync can
+  restore account data. Copying the encrypted state leaves the target signed out
+  or stuck on the account screen.
+- Same-engine open tabs are restored from the engine session files. Fenix open
+  tabs use `mozilla_components_session_storage_gecko.json`; `tabs.sqlite` alone
+  is not the live session. Cross-engine tabs are restored as URLs, so tab
+  groups, pinned state and per-tab back/forward history are not preserved. Up
+  to 30 HTTP(S) tabs are opened.
 - Extensions are inventoried, not transplanted. Chromium CRX/unpacked MV2/MV3
   packages and Gecko XPI packages, plus their private storage, are incompatible.
   The report gives store search links and data paths for manual reinstallation;
