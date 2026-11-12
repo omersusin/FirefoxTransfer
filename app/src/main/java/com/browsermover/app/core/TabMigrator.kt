@@ -205,7 +205,8 @@ internal object TabMigrator {
                 if (size == 0) break
                 val type = r.u8() ?: break
                 val payloadLength = size - 1
-                val payload = r.bytes(payloadLength) ?: run {
+                val payload = r.bytes(payloadLength)
+                if (payload == null) {
                     truncated = true
                     break
                 }

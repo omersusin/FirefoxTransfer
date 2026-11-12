@@ -260,6 +260,9 @@ class CrossEngineMigrator(private val context: Context) {
                         exportToCache(source, name)
                     }
                 }
+                else -> TabMigrator.ReadResult(
+                    emptyList(), "Unsupported source engine for open tabs."
+                )
             }
         } catch (e: Exception) {
             TabMigrator.ReadResult(emptyList(), "Could not read open tabs: ${e.message}")
@@ -268,6 +271,15 @@ class CrossEngineMigrator(private val context: Context) {
         if (read.tabs.isEmpty()) {
             read.warning?.let { warnings.add(it) }
             return null
+        }
+
+        val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val listPath = writeWorkText(
+            read.tabs.joinToString("\n") { "${it.title}\t${it.url}" },
+            "$WORK_DIR/open_tabs_$stamp.txt"
+        )
+        if (listPath != null) {
+            warnings.add("Open-tab URL list: $listPath")
         }
 
         emit(
