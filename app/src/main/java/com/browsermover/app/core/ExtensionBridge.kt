@@ -2,7 +2,7 @@ package com.browsermover.app.core
 
 import com.browsermover.app.root.RootHelper
 import org.iq80.leveldb.CompressionType
-import org.iq80.leveldb.DBFactory
+import org.iq80.leveldb.impl.Iq80DBFactory
 import org.iq80.leveldb.Options
 import org.json.JSONArray
 import org.json.JSONObject
@@ -246,13 +246,13 @@ internal object ExtensionBridge {
                 .verifyChecksums(false)
 
             var db = try {
-                DBFactory.factory.open(localDir, options)
+                Iq80DBFactory.factory.open(localDir, options)
             } catch (_: Exception) {
                 // A profile written by a different LevelDB build may not open.
                 // Recreate a clean database rather than corrupting the target.
                 localDir.deleteRecursively()
                 localDir.mkdirs()
-                DBFactory.factory.open(
+                Iq80DBFactory.factory.open(
                     localDir,
                     Options().createIfMissing(true).compressionType(CompressionType.SNAPPY)
                 )

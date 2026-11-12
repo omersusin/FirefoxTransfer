@@ -20,6 +20,30 @@ import java.nio.charset.StandardCharsets
  * later written into Chromium's LevelDB extension storage by
  * [ExtensionBridge].
  */
+private const val SC_HEADER = 0xFFF10000L
+private const val SC_NULL = 0xFFFF0000L
+private const val SC_UNDEFINED = 0xFFFF0001L
+private const val SC_BOOLEAN = 0xFFFF0002L
+private const val SC_INT32 = 0xFFFF0003L
+private const val SC_STRING = 0xFFFF0004L
+private const val SC_DATE_OBJECT = 0xFFFF0005L
+private const val SC_ARRAY_OBJECT = 0xFFFF0007L
+private const val SC_OBJECT_OBJECT = 0xFFFF0008L
+private const val SC_BOOLEAN_OBJECT = 0xFFFF000AL
+private const val SC_STRING_OBJECT = 0xFFFF000BL
+private const val SC_NUMBER_OBJECT = 0xFFFF000CL
+private const val SC_BACK_REFERENCE_OBJECT = 0xFFFF000DL
+private const val SC_END_OF_KEYS = 0xFFFF0013L
+private const val SC_FLOAT_MAX = 0xFFF00000L
+
+private fun readU64(data: ByteArray, offset: Int): Long {
+    var value = 0L
+    for (i in 0 until 8) {
+        value = value or ((data[offset + i].toLong() and 0xFF) shl (8 * i))
+    }
+    return value
+}
+
 internal object FirefoxStorageReader {
 
     data class Storage(
@@ -194,10 +218,12 @@ internal object FirefoxStorageReader {
         return out
     }
 
-    private fun jsonValue(value: Any?): Any? = when (value) {
-        is JSONObject, is JSONArray, is String, is Number, is Boolean, is JSONObject.NULL -> value
-        null -> null
-        else -> value.toString()
+    private fun jsonValue(value: Any?): Any? {
+        if (value == null || value == JSONObject.SC_NULL) return null
+        return when (value) {
+            is JSONObject, is JSONArray, is String, is Number, is Boolean -> value
+            else -> value.toString()
+        }
     }
 
     /**
@@ -252,21 +278,6 @@ internal object FirefoxStorageReader {
     // ------------------------------------------------------------------
 
     private object StructuredClone {
-        private const val HEADER = 0xFFF10000L
-        private const val NULL = 0xFFFF0000L
-        private const val UNDEFINED = 0xFFFF0001L
-        private const val BOOLEAN = 0xFFFF0002L
-        private const val INT32 = 0xFFFF0003L
-        private const val STRING = 0xFFFF0004L
-        private const val DATE_OBJECT = 0xFFFF0005L
-        private const val ARRAY_OBJECT = 0xFFFF0007L
-        private const val OBJECT_OBJECT = 0xFFFF0008L
-        private const val BOOLEAN_OBJECT = 0xFFFF000AL
-        private const val STRING_OBJECT = 0xFFFF000BL
-        private const val NUMBER_OBJECT = 0xFFFF000CL
-        private const val BACK_REFERENCE_OBJECT = 0xFFFF000DL
-        private const val END_OF_KEYS = 0xFFFF0013L
-        private const val FLOAT_MAX = 0xFFF00000L
 
         fun decode(raw: ByteArray): Any? {
             val data = decompressIfNeeded(raw)
@@ -288,8 +299,8 @@ internal object FirefoxStorageReader {
                 }
                 if (isFrame) return decompressFrame(raw)
             }
-            // A raw structured-clone value begins with the HEADER tag.
-            if (raw.size >= 8 && readU64(raw, 0).ushr(32) == HEADER) return raw
+            // A raw structured-clone value begins with the SC_HEADER tag.
+            if (raw.size >= 8 && readU64(raw, 0).ushr(32) == SC_HEADER) return raw
             return try {
                 Snappy.uncompress(raw, 0, raw.size)
             } catch (_: Exception) {
@@ -317,28 +328,20 @@ internal object FirefoxStorageReader {
             return out.toByteArray()
         }
 
-        private fun readU64(data: ByteArray, offset: Int): Long {
-            var value = 0L
-            for (i in 0 until 8) {
-                value = value or ((data[offset + i].toLong() and 0xFF) shl (8 * i))
-            }
-            return value
-        }
-
-        private inner class Parser(private val data: ByteArray) {
+        private class Parser(private val data: ByteArray) {
             private var pos = 0
             private val allObjects = ArrayList<Any?>()
             private val stack = ArrayList<Any>()
 
             fun decodeValue(): Any? {
                 val (tag, _) = readTagAndData()
-                if (tag != HEADER) throw IllegalArgumentException("not a structured clone")
+                if (tag != SC_HEADER) throw IllegalArgumentException("not a structured clone")
                 val value = startRead()
                 while (stack.isNotEmpty()) {
                     align()
                     val (nextTag, _) = peekTagAndData()
                     val obj = stack.last()
-                    if (nextTag == END_OF_KEYS) {
+                    if (nextTag == SC_END_OF_KEYS) {
                         stack.removeAt(stack.lastIndex)
                         readTagAndData()
                         continue
@@ -371,30 +374,30 @@ internal object FirefoxStorageReader {
                 val (tag, dataInt) = readTagAndData()
                 val data = dataInt.toLong() and 0xFFFFFFFFL
                 val value: Any? = when (tag) {
-                    NULL -> null
-                    UNDEFINED -> null
-                    BOOLEAN -> dataInt != 0
-                    INT32 -> dataInt
-                    STRING -> readString(data)
-                    BOOLEAN_OBJECT -> dataInt != 0
-                    STRING_OBJECT -> readString(data)
-                    NUMBER_OBJECT -> readDouble()
-                    DATE_OBJECT -> readDouble()
-                    ARRAY_OBJECT -> {
+                    SC_NULL -> null
+                    SC_UNDEFINED -> null
+                    SC_BOOLEAN -> dataInt != 0
+                    SC_INT32 -> dataInt
+                    SC_STRING -> readString(data)
+                    SC_BOOLEAN_OBJECT -> dataInt != 0
+                    SC_STRING_OBJECT -> readString(data)
+                    SC_NUMBER_OBJECT -> readDouble()
+                    SC_DATE_OBJECT -> readDouble()
+                    SC_ARRAY_OBJECT -> {
                         val list = MutableList<Any?>(dataInt.coerceAtLeast(0)) { null }
                         stack.add(list)
                         allObjects.add(list)
                         list
                     }
-                    OBJECT_OBJECT -> {
+                    SC_OBJECT_OBJECT -> {
                         val map = LinkedHashMap<String, Any?>()
                         stack.add(map)
                         allObjects.add(map)
                         map
                     }
-                    BACK_REFERENCE_OBJECT -> allObjects.getOrNull(dataInt)
+                    SC_BACK_REFERENCE_OBJECT -> allObjects.getOrNull(dataInt)
                     else -> {
-                        if (tag <= FLOAT_MAX) {
+                        if (tag <= SC_FLOAT_MAX) {
                             Double.fromBits((tag shl 32) or data)
                         } else {
                             null
@@ -405,9 +408,9 @@ internal object FirefoxStorageReader {
                 return value
             }
 
-            private fun readString(data: Long): String {
-                val length = (data and 0x7FFFFFFFL).toInt()
-                val latin1 = (data and 0x80000000L) != 0L
+            private fun readString(meta: Long): String {
+                val length = (meta and 0x7FFFFFFFL).toInt()
+                val latin1 = (meta and 0x80000000L) != 0L
                 if (length < 0 || length > data.size) throw IllegalArgumentException("bad string")
                 return if (latin1) {
                     if (pos + length > data.size) throw IllegalArgumentException("bad string")
@@ -432,7 +435,7 @@ internal object FirefoxStorageReader {
             }
 
             private fun peekTagAndData(): Pair<Long, Int> {
-                if (pos + 8 > data.size) return END_OF_KEYS to 0
+                if (pos + 8 > data.size) return SC_END_OF_KEYS to 0
                 val pair = readU64(data, pos)
                 return pair.ushr(32) to (pair and 0xFFFFFFFFL).toInt()
             }

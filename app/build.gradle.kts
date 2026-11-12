@@ -56,6 +56,13 @@ android {
     }
 }
 
+configurations.all {
+    // org.iq80.leveldb pulls Guava 21, which already contains
+    // ListenableFuture. The standalone listenablefuture artifact duplicates
+    // the same classes and breaks Android's duplicate-class check.
+    exclude(group = "com.google.guava", module = "listenablefuture")
+}
+
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
