@@ -70,4 +70,10 @@ dependencies {
     // other apps' private data.
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
+
+    // Pure-Java LevelDB/Snappy readers/writers. Chrome's extension storage is
+    // a LevelDB database, and Firefox's IndexedDB records are Snappy-compressed.
+    // Using libraries here avoids shipping or invoking a native binary.
+    implementation("org.iq80.leveldb:leveldb:0.12")
+    implementation("org.iq80.snappy:snappy:0.4")
 }

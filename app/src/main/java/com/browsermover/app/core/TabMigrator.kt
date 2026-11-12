@@ -86,6 +86,10 @@ internal object TabMigrator {
         val candidates = mutableListOf<String>()
         for (root in roots) {
             for (name in listOf(
+                // Firefox for Android (Fenix) keeps its live tab list here.
+                // sessionstore.jsonlz4 is written by desktop Firefox and is
+                // usually absent on Android.
+                "mozilla_components_session_storage_gecko.json",
                 "sessionstore.jsonlz4", "sessionstore.js",
                 "sessionstore-backups/recovery.jsonlz4",
                 "sessionstore-backups/recovery.js",
@@ -303,6 +307,13 @@ internal object TabMigrator {
             val jsonBytes = decodeMozLz4(bytes) ?: bytes
             val text = String(jsonBytes, StandardCharsets.UTF_8).removePrefix("\uFEFF")
             val root = JSONObject(text)
+
+            // Mozilla Android Components session storage (Fenix):
+            // { "version": 2, "sessionStateTuples": [ { "session": { "url": ...,
+            //   "title": ... } } ] }
+            val androidTabs = parseAndroidComponentsSession(root)
+            if (androidTabs != null) return androidTabs
+
             val windows = root.optJSONArray("windows") ?: return ReadResult(
                 emptyList(), "Gecko session has no windows array."
             )
@@ -336,6 +347,47 @@ internal object TabMigrator {
         } catch (e: Exception) {
             ReadResult(emptyList(), "Gecko session parse error: ${e.message}")
         }
+    }
+
+    /**
+     * Read the live session file written by Mozilla Android Components.
+     * Unlike desktop sessionstore this has no windows/entries arrays: every
+     * tuple contains the current URL and title, plus the opaque Gecko history
+     * state (which we intentionally do not transplant).
+     */
+    private fun parseAndroidComponentsSession(root: JSONObject): ReadResult? {
+        val tuples = root.optJSONArray("sessionStateTuples") ?: return null
+        val selectedId = root.optString("selectedTabId", "")
+        val selectedIndex = root.optInt("selectedSessionIndex", -1)
+        val result = mutableListOf<OpenTab>()
+        for (i in 0 until tuples.length()) {
+            val tuple = tuples.optJSONObject(i) ?: continue
+            val session = tuple.optJSONObject("session") ?: continue
+            val url = session.optString("url", "")
+            if (!isImportableUrl(url)) continue
+            val id = session.optString("uuid", "")
+            val title = session.optString("title", "")
+            result.add(
+                OpenTab(
+                    url = url,
+                    title = title,
+                    windowIndex = if (selectedId.isNotEmpty() && id == selectedId) 0
+                        else if (selectedIndex >= 0 && i == selectedIndex) 0 else 1,
+                    tabIndex = i
+                )
+            )
+        }
+        // The tuple order is creation order. Put the selected tab first, then
+        // keep the rest in their original order.
+        val selected = result.firstOrNull { it.windowIndex == 0 }
+        val ordered = buildList {
+            if (selected != null) add(selected)
+            addAll(result.filter { it !== selected })
+        }
+        return ReadResult(
+            ordered.distinctBy { it.url },
+            if (ordered.isEmpty()) "No restorable Android Components tabs found." else null
+        )
     }
 
     fun decodeMozLz4(data: ByteArray): ByteArray? {

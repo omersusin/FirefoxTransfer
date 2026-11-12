@@ -467,7 +467,7 @@ main() {
             safe_cp "$f" "${dst_sp}/${fname}" "shared_pref: $fname"
         done
         if [ "$skipped_account" -gt 0 ]; then
-            log_warn "Firefox Account/Keystore prefs not copied ($skipped_account files). Sign in again in the target."
+            log_warn "Firefox Account/Keystore prefs left untouched ($skipped_account files). The target keeps its own account state; if it was signed out before migration, sign in once in the target."
         fi
     fi
 

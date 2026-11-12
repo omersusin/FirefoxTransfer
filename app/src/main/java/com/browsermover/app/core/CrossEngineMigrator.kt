@@ -6,6 +6,7 @@ import com.browsermover.app.model.MigrationResult
 import com.browsermover.app.root.RootHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
@@ -175,12 +176,15 @@ class CrossEngineMigrator(private val context: Context) {
             }
 
             val extensionSummary = migrateExtensionInventory(
+                sourcePkg = sourcePkg,
+                targetPkg = targetPkg,
                 sourceEngine = sourceEngine,
                 targetEngine = targetEngine,
                 sourceChromium = sourceChromium,
                 sourceGecko = sourceGecko,
                 targetChromium = targetChromium,
                 targetGecko = targetGecko,
+                onProgress = onProgress,
                 warnings = warnings
             )
 
@@ -308,12 +312,15 @@ class CrossEngineMigrator(private val context: Context) {
     }
 
     private suspend fun migrateExtensionInventory(
+        sourcePkg: String,
+        targetPkg: String,
         sourceEngine: BrowserType,
         targetEngine: BrowserType,
         sourceChromium: ChromiumProfile?,
         sourceGecko: GeckoProfile?,
         targetChromium: ChromiumProfile?,
         targetGecko: GeckoProfile?,
+        onProgress: suspend (MigrationResult.Progress) -> Unit,
         warnings: MutableList<String>
     ): String? {
         return try {
@@ -344,6 +351,21 @@ class CrossEngineMigrator(private val context: Context) {
                 return null
             }
 
+            // Firefox -> Chromium is the direction where reinstallation and
+            // storage conversion are technically possible. Do it before the
+            // report is written so the report can include the outcome.
+            val bridge = if (sourceEngine == BrowserType.GECKO &&
+                targetEngine == BrowserType.CHROMIUM &&
+                sourceGecko != null && targetChromium != null
+            ) {
+                bridgeGeckoExtensions(
+                    sourceGecko, targetChromium, targetPkg, source,
+                    onProgress, warnings
+                )
+            } else {
+                emptyList()
+            }
+
             val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
             val jsonPath = writeWorkText(
                 report.json,
@@ -359,7 +381,14 @@ class CrossEngineMigrator(private val context: Context) {
             )
             if (archive != null) {
                 warnings.add(
-                    "Extension data archive: $archive (manual export only; cross-engine storage formats differ)"
+                    "Raw extension data backup: $archive"
+                )
+            }
+            if (bridge.isNotEmpty()) {
+                warnings.add(
+                    "Extension bridge: ${bridge.count { it.imported > 0 }} extension(s) had " +
+                        "settings converted; ${bridge.count { it.crxPath != null }} CRX file(s) " +
+                        "were downloaded. Open each store page in the target and tap Add to Chrome."
                 )
             }
             val path = htmlPath ?: jsonPath
@@ -367,6 +396,14 @@ class CrossEngineMigrator(private val context: Context) {
                 warnings.add(
                     "Extension report: $path (also copied to $PUBLIC_REPORT_DIR when writable)"
                 )
+                if (bridge.isNotEmpty()) {
+                    val lines = bridge.joinToString("\n") { it.describe() }
+                    val bridgePath = writeWorkText(
+                        lines,
+                        "$WORK_DIR/extension_bridge_$stamp.txt"
+                    )
+                    if (bridgePath != null) warnings.add("Extension bridge log: $bridgePath")
+                }
                 if (archive != null) {
                     "Extension report: $path (archive: $archive)"
                 } else {
@@ -380,6 +417,170 @@ class CrossEngineMigrator(private val context: Context) {
             warnings.add("Extension inventory failed: ${e.message}")
             null
         }
+    }
+
+    private data class BridgeOutcome(
+        val sourceName: String,
+        val targetId: String,
+        val targetName: String,
+        val storeUrl: String,
+        val imported: Int,
+        val crxPath: String?,
+        val warning: String? = null
+    ) {
+        fun describe(): String = buildString {
+            append(sourceName)
+            append(" -> ")
+            append(targetName)
+            append(" (")
+            append(targetId)
+            append(") imported=")
+            append(imported)
+            append(" crx=")
+            append(crxPath ?: "-")
+            append(" store=")
+            append(storeUrl)
+            if (!warning.isNullOrBlank()) {
+                append(" warning=")
+                append(warning)
+            }
+        }
+    }
+
+    /**
+     * Resolve each source extension in the Chrome Web Store, download the CRX,
+     * convert Firefox storage.local into Chromium LevelDB, and open the store
+     * page for the final install gesture.
+     */
+    private suspend fun bridgeGeckoExtensions(
+        sourceGecko: GeckoProfile,
+        targetChromium: ChromiumProfile,
+        targetPkg: String,
+        source: List<ExtensionMigrator.Extension>,
+        onProgress: suspend (MigrationResult.Progress) -> Unit,
+        warnings: MutableList<String>
+    ): List<BridgeOutcome> {
+        val candidates = source.filter { it.enabled }.take(6)
+        if (candidates.isEmpty()) return emptyList()
+        val outcomes = mutableListOf<BridgeOutcome>()
+        val publicDir = "$PUBLIC_REPORT_DIR/extensions"
+
+        for ((index, ext) in candidates.withIndex()) {
+            emit(
+                onProgress, 4, "Extensions",
+                "Resolving ${ext.name} (${index + 1}/${candidates.size})...",
+                88
+            )
+            val outcome = try {
+                withTimeoutOrNull(90_000) {
+                    bridgeOneGeckoExtension(
+                        sourceGecko, targetChromium, targetPkg, ext, publicDir, warnings
+                    )
+                }
+            } catch (e: Exception) {
+                BridgeOutcome(
+                    ext.name, "", ext.name, "", 0, null,
+                    "bridge error: ${e.message}"
+                )
+            }
+            if (outcome == null) {
+                warnings.add("${ext.name}: extension bridge timed out.")
+                outcomes.add(
+                    BridgeOutcome(ext.name, "", ext.name, "", 0, null, "timed out")
+                )
+            } else {
+                outcome.warning?.let {
+                    if (!it.isBlank()) warnings.add("${ext.name}: $it")
+                }
+                outcomes.add(outcome)
+            }
+            delay(800)
+        }
+        return outcomes
+    }
+
+    private suspend fun bridgeOneGeckoExtension(
+        sourceGecko: GeckoProfile,
+        targetChromium: ChromiumProfile,
+        targetPkg: String,
+        ext: ExtensionMigrator.Extension,
+        publicDir: String,
+        warnings: MutableList<String>
+    ): BridgeOutcome {
+        val store = ExtensionBridge.resolveStore(ext.name)
+            ?: return BridgeOutcome(
+                ext.name, "", ext.name, "", 0, null,
+                "no Chrome Web Store match was found"
+            )
+
+        // Read source storage before touching the target.
+        val storage = try {
+            FirefoxStorageReader.read(sourceGecko, ext.id, cacheRoot)
+        } catch (e: Exception) {
+            warnings.add("${ext.name}: Firefox storage read failed: ${e.message}")
+            null
+        }
+
+        var imported = 0
+        var warning: String? = null
+        if (storage != null && storage.values.isNotEmpty()) {
+            storage.warning?.let { warnings.add("${ext.name}: $it") }
+            val result = ExtensionBridge.importData(
+                targetPkg = targetPkg,
+                targetProfileDir = targetChromium.profileDir,
+                targetId = store.id,
+                targetName = store.name,
+                values = storage.values,
+                source = storage.source,
+                cacheDir = cacheRoot
+            )
+            if (result == null) {
+                warning = "storage conversion produced no values"
+            } else {
+                imported = result.valuesImported
+                result.warning?.let { warning = it }
+            }
+        } else {
+            warning = "no storage.local data was found in Firefox"
+        }
+
+        // Download the signed package for Bare's Install CRX flow. If the
+        // store install succeeds, Chrome ignores the extra file.
+        val crx = try {
+            ExtensionBridge.downloadCrx(store.id, store.name, cacheRoot, publicDir)
+        } catch (_: Exception) {
+            null
+        }
+
+        val opened = try {
+            ExtensionBridge.openStore(targetPkg, store.storeUrl)
+        } catch (_: Exception) {
+            false
+        }
+        if (!opened) {
+            if (crx != null) {
+                ExtensionBridge.tryInstallCrx(targetPkg, crx)
+                warning = listOfNotNull(
+                    warning,
+                    "store page could not be opened; a CRX is in $publicDir"
+                ).joinToString("; ")
+            } else {
+                warning = listOfNotNull(
+                    warning,
+                    "store page could not be opened"
+                ).joinToString("; ")
+            }
+        }
+
+        return BridgeOutcome(
+            sourceName = ext.name,
+            targetId = store.id,
+            targetName = store.name,
+            storeUrl = store.storeUrl,
+            imported = imported,
+            crxPath = crx,
+            warning = warning
+        )
     }
 
     private suspend fun exportExtensionData(

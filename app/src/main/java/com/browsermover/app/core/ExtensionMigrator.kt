@@ -195,8 +195,9 @@ internal object ExtensionMigrator {
             })
             put(
                 "note",
-                "Cross-engine extension packages and storage are not interchangeable. " +
-                    "Use the store links to reinstall equivalents; data paths are listed for manual recovery."
+                "For Firefox -> Chromium, matching store extensions are resolved and storage.local " +
+                    "is converted to Chromium LevelDB. A store install still needs one Add to Chrome tap. " +
+                    "Other directions list store links and source data paths."
             )
         }
 
@@ -204,20 +205,20 @@ internal object ExtensionMigrator {
             warnings.add("No source extensions were found.")
         } else {
             warnings.add(
-                "${source.size} source extension(s) were inventoried. Cross-engine extension packages/data " +
-                    "are incompatible and were not copied; store links and data paths are in the extension report."
+                "${source.size} source extension(s) were inventoried. Store links and source data " +
+                    "paths are in the extension report; Firefox -> Chromium also runs the storage bridge."
             )
         }
         if (matched.isNotEmpty()) {
             warnings.add(
-                "${matched.size} extension name(s) also exist in the target. " +
-                    "Their internal storage formats still differ, so settings were not transplanted."
+                "${matched.size} extension name(s) also exist in the target. Cross-engine settings " +
+                    "are only transplanted for Firefox -> Chromium when a store match is found."
             )
         }
         if (targetEngine == BrowserType.CHROMIUM) {
             warnings.add(
-                "Most Android Chromium browsers do not support installing arbitrary extensions. " +
-                    "Check whether the target exposes an extension store before installing a store match."
+                "Normal Chrome builds may block extension installs. Bare Browser supports Chrome " +
+                    "Web Store extensions, CRX files, and unpacked extensions."
             )
         }
 
@@ -274,8 +275,9 @@ th{background:#222} code{color:#ffcc80}.warn{color:#ffb74d}
 </style></head><body>
 <h1>Extension migration report</h1>
 <p>${escape(sourceEngine.name)} → ${escape(targetEngine.name)}</p>
-<p class="warn">Extension packages and private storage are engine-specific. This report does not install
-anything automatically. Use the target-store links to reinstall equivalents, then configure them again.</p>
+<p class="warn">Firefox → Chromium: matching Chrome Web Store extensions are resolved, downloaded
+as CRX, and their storage.local values are converted to Chromium's LevelDB. The final
+<b>Add to Chrome</b> tap is required by the store. Other directions only list store links and data paths.</p>
 <p>Source: ${source.size} extension(s), target: ${target.size} extension(s), name matches: ${matched.size}.</p>
 <table><thead><tr><th>Name</th><th>ID</th><th>Version</th><th>Target match</th><th>Store</th><th>Source data paths</th></tr></thead>
 <tbody>$rows</tbody></table>
@@ -322,7 +324,12 @@ anything automatically. Use the target-store links to reinstall equivalents, the
     }
 
     private fun geckoDataPaths(roots: List<String>, id: String): List<String> {
-        return roots.map { "$it/browser-extension-data/$id" }
+        return roots.flatMap {
+            listOf(
+                "$it/browser-extension-data/$id",
+                "$it/storage/default/moz-extension+++*^addonId=$id"
+            )
+        }
     }
 
     private suspend fun readRootText(path: String): String? {
