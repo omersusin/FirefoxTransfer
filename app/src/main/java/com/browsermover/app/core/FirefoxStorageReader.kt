@@ -219,7 +219,7 @@ internal object FirefoxStorageReader {
     }
 
     private fun jsonValue(value: Any?): Any? {
-        if (value == null || value == JSONObject.SC_NULL) return null
+        if (value == null || value == JSONObject.NULL) return null
         return when (value) {
             is JSONObject, is JSONArray, is String, is Number, is Boolean -> value
             else -> value.toString()
