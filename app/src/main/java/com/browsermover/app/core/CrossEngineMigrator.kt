@@ -23,6 +23,7 @@ class CrossEngineMigrator(private val context: Context) {
 
     companion object {
         private const val WORK_DIR = "/data/local/tmp/browser_migrator"
+        private const val PUBLIC_REPORT_DIR = "/sdcard/Download/BrowserDataMigrator"
         private const val LOG_FILE = "$WORK_DIR/migration.log"
     }
 
@@ -183,14 +184,19 @@ class CrossEngineMigrator(private val context: Context) {
                 warnings = warnings
             )
 
-            val tabSummary = restoreOpenTabs(
-                sourceEngine = sourceEngine,
-                sourceChromium = sourceChromium,
-                sourceGecko = sourceGecko,
-                targetPkg = targetPkg,
-                onProgress = onProgress,
-                warnings = warnings
-            )
+            val tabSummary = try {
+                restoreOpenTabs(
+                    sourceEngine = sourceEngine,
+                    sourceChromium = sourceChromium,
+                    sourceGecko = sourceGecko,
+                    targetPkg = targetPkg,
+                    onProgress = onProgress,
+                    warnings = warnings
+                )
+            } catch (e: Exception) {
+                warnings.add("Open tabs could not be transferred: ${e.message}")
+                null
+            }
 
             val summary = buildString {
                 append("Cross-engine migration completed. ")
@@ -371,6 +377,9 @@ class CrossEngineMigrator(private val context: Context) {
                 "mkdir -p ${BrowserPaths.q(WORK_DIR)}",
                 "cp -f ${BrowserPaths.q(temp.absolutePath)} ${BrowserPaths.q(target)}",
                 "chmod 644 ${BrowserPaths.q(target)}",
+                "mkdir -p ${BrowserPaths.q(PUBLIC_REPORT_DIR)} 2>/dev/null || true",
+                "cp -f ${BrowserPaths.q(target)} ${BrowserPaths.q(PUBLIC_REPORT_DIR)}/ " +
+                    "2>/dev/null || true",
                 "command -v restorecon >/dev/null 2>&1 && " +
                     "restorecon -F ${BrowserPaths.q(target)} 2>/dev/null || true"
             ))

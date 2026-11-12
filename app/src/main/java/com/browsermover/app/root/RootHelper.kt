@@ -108,7 +108,7 @@ object RootHelper {
                 append("sh \"$scriptPath\"")
                 args.forEach { append(" \"$it\"") }
             }
-            val result = withTimeoutOrNull(180_000) { ShizukuShell.exec(fullCommand) }
+            val result = withTimeoutOrNull(600_000) { ShizukuShell.exec(fullCommand) }
             if (result == null) {
                 withContext(Dispatchers.Main) {
                     onLine("[EXCEPTION] Shizuku shell timed out")
@@ -157,7 +157,7 @@ object RootHelper {
     }
 
     private suspend fun shizukuExec(command: String): CommandResult {
-        val result = withTimeoutOrNull(180_000) { ShizukuShell.exec(command) }
+        val result = withTimeoutOrNull(600_000) { ShizukuShell.exec(command) }
             ?: return CommandResult(
                 -1, "", "Shizuku shell timed out or is unavailable.", false
             )

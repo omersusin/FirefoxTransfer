@@ -18,7 +18,7 @@ class ShellUserService : IShellService.Stub() {
                 .redirectErrorStream(true)
                 .start()
             val output = process.inputStream.bufferedReader().use { it.readText() }
-            val finished = process.waitFor(90, TimeUnit.SECONDS)
+            val finished = process.waitFor(600, TimeUnit.SECONDS)
             if (!finished) {
                 process.destroyForcibly()
                 "MIGRATOR_EXIT:-1\nCommand timed out\n"

@@ -148,8 +148,8 @@ object ShizukuShell {
                 .processNameSuffix("shizuku_shell")
                 .version(1)
                 .tag(TAG)
-            Shizuku.bindUserService(args, connection)
             pendingConnect = callback
+            Shizuku.bindUserService(args, connection)
         } catch (e: Throwable) {
             connecting.set(false)
             lastError = e.message
