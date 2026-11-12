@@ -11,8 +11,8 @@ android {
         applicationId = "com.browsermover.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.1.1"
+        versionCode = 4
+        versionName = "1.2.0"
     }
 
     signingConfigs {
@@ -52,6 +52,7 @@ android {
 
     buildFeatures {
         viewBinding = true
+        aidl = true
     }
 }
 
@@ -63,4 +64,10 @@ dependencies {
     implementation("androidx.cardview:cardview:1.0.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // Shizuku/Sui support. Shizuku can execute as UID 0 only when the user
+    // started it with root; the normal ADB backend is UID 2000 and cannot read
+    // other apps' private data.
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 }

@@ -134,8 +134,8 @@ class CrossEngineMigrator(private val context: Context) {
 
             cacheRoot.mkdirs()
             warnings.add(
-                "Passwords, cookies, extensions, and open tabs are browser-specific " +
-                    "and were not migrated."
+                "Passwords, cookies, and extension binaries/data are browser-specific " +
+                    "and were not converted."
             )
 
             val result = when {
@@ -173,9 +173,36 @@ class CrossEngineMigrator(private val context: Context) {
                 return@withContext MigrationResult.Failure(detail, "", LOG_FILE)
             }
 
+            val extensionSummary = migrateExtensionInventory(
+                sourceEngine = sourceEngine,
+                targetEngine = targetEngine,
+                sourceChromium = sourceChromium,
+                sourceGecko = sourceGecko,
+                targetChromium = targetChromium,
+                targetGecko = targetGecko,
+                warnings = warnings
+            )
+
+            val tabSummary = restoreOpenTabs(
+                sourceEngine = sourceEngine,
+                sourceChromium = sourceChromium,
+                sourceGecko = sourceGecko,
+                targetPkg = targetPkg,
+                onProgress = onProgress,
+                warnings = warnings
+            )
+
             val summary = buildString {
                 append("Cross-engine migration completed. ")
                 append(result.message)
+                if (extensionSummary != null) {
+                    append(' ')
+                    append(extensionSummary)
+                }
+                if (tabSummary != null) {
+                    append(' ')
+                    append(tabSummary)
+                }
                 if (!backupPath.isNullOrBlank()) {
                     append(" Backup: ")
                     append(backupPath)
@@ -197,6 +224,149 @@ class CrossEngineMigrator(private val context: Context) {
             )
         } finally {
             cleanupCache()
+        }
+    }
+
+    /**
+     * Open tabs are read from the source engine's session files and launched
+     * in the target browser as ordinary VIEW intents. This is intentionally
+     * not a binary session-file transplant: SNSS and MozLz4 session formats
+     * are private, engine-specific, and unsafe to write across browsers.
+     */
+    private suspend fun restoreOpenTabs(
+        sourceEngine: BrowserType,
+        sourceChromium: ChromiumProfile?,
+        sourceGecko: GeckoProfile?,
+        targetPkg: String,
+        onProgress: suspend (MigrationResult.Progress) -> Unit,
+        warnings: MutableList<String>
+    ): String? {
+        emit(onProgress, 4, "Open tabs", "Reading source browser tabs...", 92)
+        val read = try {
+            when (sourceEngine) {
+                BrowserType.CHROMIUM -> {
+                    val profile = sourceChromium
+                    if (profile == null) TabMigrator.ReadResult(
+                        emptyList(), "Source Chromium profile is unavailable."
+                    ) else TabMigrator.collectChromium(profile) { source, name ->
+                        exportToCache(source, name)
+                    }
+                }
+                BrowserType.GECKO -> {
+                    val profile = sourceGecko
+                    if (profile == null) TabMigrator.ReadResult(
+                        emptyList(), "Source Gecko profile is unavailable."
+                    ) else TabMigrator.collectGecko(profile) { source, name ->
+                        exportToCache(source, name)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            TabMigrator.ReadResult(emptyList(), "Could not read open tabs: ${e.message}")
+        }
+
+        if (read.tabs.isEmpty()) {
+            read.warning?.let { warnings.add(it) }
+            return null
+        }
+
+        emit(
+            onProgress, 4, "Open tabs",
+            "Opening ${read.tabs.size} source tab(s) in the target browser...",
+            96
+        )
+        val opened = TabMigrator.openInTarget(targetPkg, read.tabs)
+        if (opened.opened > 0) {
+            warnings.add(
+                "Open tabs were launched as new tabs in the target browser. " +
+                    "Tab groups, pinned state, and per-tab back/forward history are not preserved."
+            )
+            if (opened.warning != null) warnings.add(opened.warning)
+            return "Opened ${opened.opened} of ${read.tabs.size} source tab(s) in the target browser."
+        }
+
+        warnings.add(opened.warning ?: "The target browser did not accept any open-tab intents.")
+        return null
+    }
+
+    private suspend fun migrateExtensionInventory(
+        sourceEngine: BrowserType,
+        targetEngine: BrowserType,
+        sourceChromium: ChromiumProfile?,
+        sourceGecko: GeckoProfile?,
+        targetChromium: ChromiumProfile?,
+        targetGecko: GeckoProfile?,
+        warnings: MutableList<String>
+    ): String? {
+        return try {
+            val source = when (sourceEngine) {
+                BrowserType.CHROMIUM -> sourceChromium?.let {
+                    ExtensionMigrator.collectChromium(it)
+                }.orEmpty()
+                BrowserType.GECKO -> sourceGecko?.let {
+                    ExtensionMigrator.collectGecko(it)
+                }.orEmpty()
+                else -> emptyList()
+            }
+            val target = when (targetEngine) {
+                BrowserType.CHROMIUM -> targetChromium?.let {
+                    ExtensionMigrator.collectChromium(it)
+                }.orEmpty()
+                BrowserType.GECKO -> targetGecko?.let {
+                    ExtensionMigrator.collectGecko(it)
+                }.orEmpty()
+                else -> emptyList()
+            }
+
+            val report = ExtensionMigrator.buildReport(
+                sourceEngine, targetEngine, source, target
+            )
+            if (report.source.isEmpty()) {
+                warnings.add("No source extensions were found to inventory.")
+                return null
+            }
+
+            val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val jsonPath = writeWorkText(
+                report.json,
+                "$WORK_DIR/extension_report_$stamp.json"
+            )
+            val htmlPath = writeWorkText(
+                report.html,
+                "$WORK_DIR/extension_report_$stamp.html"
+            )
+            warnings.addAll(report.warnings)
+            val path = htmlPath ?: jsonPath
+            if (path != null) {
+                warnings.add("Extension report: $path")
+                "Extension report: $path"
+            } else {
+                warnings.add("Could not write the extension report to $WORK_DIR.")
+                null
+            }
+        } catch (e: Exception) {
+            warnings.add("Extension inventory failed: ${e.message}")
+            null
+        }
+    }
+
+    private suspend fun writeWorkText(content: String, target: String): String? {
+        cacheRoot.mkdirs()
+        val temp = File(cacheRoot, "report_${System.currentTimeMillis()}.txt")
+        return try {
+            temp.writeText(content, Charsets.UTF_8)
+            val result = RootHelper.execMultiple(listOf(
+                "mkdir -p ${BrowserPaths.q(WORK_DIR)}",
+                "cp -f ${BrowserPaths.q(temp.absolutePath)} ${BrowserPaths.q(target)}",
+                "chmod 644 ${BrowserPaths.q(target)}",
+                "command -v restorecon >/dev/null 2>&1 && " +
+                    "restorecon -F ${BrowserPaths.q(target)} 2>/dev/null || true"
+            ))
+            if (result.success && BrowserPaths.exists(target)) target else null
+        } catch (_: Exception) {
+            null
+        } finally {
+            temp.delete()
         }
     }
 

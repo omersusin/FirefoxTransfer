@@ -43,7 +43,18 @@
             android:textSize="14sp"
             android:gravity="center"
             android:padding="8dp"
-            android:layout_marginBottom="16dp"/>
+            android:layout_marginBottom="8dp"/>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnShizuku"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:text="SHIZUKU ACCESS"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:backgroundTint="#7B1FA2"
+            android:visibility="gone"
+            android:layout_marginBottom="12dp"/>
 
         <!-- Source Package -->
         <com.google.android.material.textfield.TextInputLayout

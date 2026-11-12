@@ -18,6 +18,7 @@ import com.browsermover.app.core.PackageValidator
 import com.browsermover.app.databinding.ActivityMainBinding
 import com.browsermover.app.model.MigrationResult
 import com.browsermover.app.root.RootHelper
+import com.browsermover.app.root.ShizukuShell
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -28,6 +29,7 @@ class MainActivity : AppCompatActivity() {
 
     private var isMigrating = false
     private var migrationJob: Job? = null
+    private var hasPrivilegedAccess = false
 
     private val cBlue   by lazy { ContextCompat.getColor(this, R.color.accent_blue) }
     private val cGreen  by lazy { ContextCompat.getColor(this, R.color.accent_green) }
@@ -43,11 +45,18 @@ class MainActivity : AppCompatActivity() {
         setContentView(b.root)
 
         mover = DataMover(this)
+        ShizukuShell.initialize(this)
 
         setupInputWatchers()
         b.btnStart.setOnClickListener { confirmAndStart() }
         b.btnDeleteBackups.setOnClickListener { confirmDeleteBackups() }
+        b.btnShizuku.setOnClickListener { requestShizukuAccess() }
         checkRoot()
+    }
+
+    override fun onDestroy() {
+        ShizukuShell.release()
+        super.onDestroy()
     }
 
     @Deprecated("Deprecated in Java")
@@ -73,7 +82,8 @@ class MainActivity : AppCompatActivity() {
     private fun updateButton() {
         val src = b.etSource.text?.toString()?.trim().orEmpty()
         val dst = b.etTarget.text?.toString()?.trim().orEmpty()
-        b.btnStart.isEnabled = !isMigrating &&
+        b.btnStart.isEnabled = hasPrivilegedAccess &&
+            !isMigrating &&
             PackageValidator.isValid(src) &&
             PackageValidator.isValid(dst) &&
             src != dst
@@ -81,18 +91,58 @@ class MainActivity : AppCompatActivity() {
 
     private fun checkRoot() {
         lifecycleScope.launch {
-            b.txtRootStatus.text = "Checking root access..."
+            b.txtRootStatus.text = "Checking root / Shizuku access..."
             b.txtRootStatus.setTextColor(cOrange)
 
             if (RootHelper.checkRoot()) {
-                b.txtRootStatus.text = "✓ Root access available"
+                hasPrivilegedAccess = true
+                val label = RootHelper.accessLabel()
+                b.txtRootStatus.text = "✓ $label access available"
                 b.txtRootStatus.setTextColor(cGreen)
+                b.btnShizuku.visibility = View.GONE
                 updateButton()
             } else {
-                b.txtRootStatus.text = "✗ NO root access"
-                b.txtRootStatus.setTextColor(cRed)
+                hasPrivilegedAccess = false
                 b.btnStart.isEnabled = false
-                appendLog("[ERR] Root not found!", cRed)
+                if (ShizukuShell.installed()) {
+                    b.btnShizuku.visibility = View.VISIBLE
+                    b.txtRootStatus.text = "✗ No root. ${ShizukuShell.backendLabel()}"
+                    appendLog("[WARN] Shizuku is present. Grant access and use a root-started Shizuku; ADB/UID 2000 cannot read app data.", cOrange)
+                } else {
+                    b.btnShizuku.visibility = View.GONE
+                    b.txtRootStatus.text = "✗ NO root or root-backed Shizuku"
+                    appendLog("[ERR] Root not found!", cRed)
+                }
+                b.txtRootStatus.setTextColor(cRed)
+            }
+        }
+    }
+
+    private fun requestShizukuAccess() {
+        ShizukuShell.requestPermission { granted ->
+            lifecycleScope.launch {
+                if (!granted) {
+                    appendLog("[ERR] Shizuku permission was not granted.", cRed)
+                    return@launch
+                }
+                val uid = ShizukuShell.uid()
+                if (uid == 0) {
+                    hasPrivilegedAccess = true
+                    b.txtRootStatus.text = "✓ Shizuku root (UID 0) access available"
+                    b.txtRootStatus.setTextColor(cGreen)
+                    b.btnShizuku.visibility = View.GONE
+                    updateButton()
+                } else {
+                    hasPrivilegedAccess = false
+                    b.btnStart.isEnabled = false
+                    b.txtRootStatus.text = "✗ Shizuku ADB (UID ${uid ?: 2000}) cannot read app data"
+                    b.txtRootStatus.setTextColor(cRed)
+                    appendLog(
+                        "[WARN] Shizuku is running with the ADB backend. Android shell UID 2000 " +
+                            "cannot read /data/user/0/<package>. Start Shizuku with root, or use su.",
+                        cOrange
+                    )
+                }
             }
         }
     }

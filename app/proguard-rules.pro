@@ -14,3 +14,9 @@
 
 # ViewBinding
 -keep class com.browsermover.app.databinding.** { *; }
+
+# Shizuku UserService classes are loaded by name from a different process.
+-keep class com.browsermover.app.root.ShellUserService { *; }
+-keep interface com.browsermover.app.IShellService { *; }
+-keep class com.browsermover.app.IShellService$Stub { *; }
+-keep class rikka.shizuku.** { *; }

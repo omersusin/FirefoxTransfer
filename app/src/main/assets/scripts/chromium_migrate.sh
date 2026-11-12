@@ -261,10 +261,28 @@ main() {
     rm -f "${dst_profile}/Bookmarks.bak" "${dst_profile}/Bookmarks.tmp" 2>/dev/null
 
     # ---- PHASE 2 ----
-    log_info "PHASE 2: EXTENSION MIGRATION"
+    log_info "PHASE 2: OPEN-TAB / SESSION MIGRATION"
+
+    # Chromium keeps the live session in Sessions/Session_* (modern) or in
+    # Current Session/Current Tabs (older forks). Copying these files is safe
+    # only engine-to-engine; cross-engine tab transfer is handled in Kotlin by
+    # reading the source session and opening its URLs in the target.
+    if [ -d "${src_profile}/Sessions" ]; then
+        rm -rf "${dst_profile}/Sessions" 2>/dev/null
+        safe_cp "${src_profile}/Sessions" "${dst_profile}/Sessions" "Sessions/"
+    fi
+    for sf in "Current Session" "Current Tabs" "Last Session" "Last Tabs"; do
+        if [ -f "${src_profile}/${sf}" ]; then
+            safe_cp "${src_profile}/${sf}" "${dst_profile}/${sf}" "$sf"
+        fi
+    done
+
+    # ---- PHASE 3 ----
+    log_info "PHASE 3: EXTENSION MIGRATION"
 
     safe_cp "${src_profile}/Extensions" "${dst_profile}/Extensions" "Extensions/"
     safe_cp "${src_profile}/Local Extension Settings" "${dst_profile}/Local Extension Settings" "Local Extension Settings/"
+    safe_cp "${src_profile}/Sync Extension Settings" "${dst_profile}/Sync Extension Settings" "Sync Extension Settings/"
     safe_cp "${src_profile}/Extension State" "${dst_profile}/Extension State" "Extension State/"
     safe_cp "${src_profile}/Extension Rules" "${dst_profile}/Extension Rules" "Extension Rules/"
 
@@ -276,8 +294,8 @@ main() {
         done
     fi
 
-    # ---- PHASE 3 ----
-    log_info "PHASE 3: JSON PATCHING"
+    # ---- PHASE 4 ----
+    log_info "PHASE 4: JSON PATCHING"
 
     local src_bn dst_bn
     src_bn=$(basename "$src_base")
@@ -338,16 +356,16 @@ main() {
         log_info "sqlite3 not found, advanced SQLite path rewriting skipped (data is still copied)"
     fi
 
-    # ---- PHASE 5 ----
-    log_info "PHASE 5: WEB STORAGE"
+    # ---- PHASE 6 ----
+    log_info "PHASE 6: WEB STORAGE"
 
     safe_cp "${src_profile}/Local Storage" "${dst_profile}/Local Storage" "Local Storage/"
     safe_cp "${src_profile}/IndexedDB" "${dst_profile}/IndexedDB" "IndexedDB/"
     safe_cp "${src_profile}/databases" "${dst_profile}/databases" "WebSQL/"
     safe_cp "${src_profile}/Session Storage" "${dst_profile}/Session Storage" "Session Storage/"
 
-    # ---- PHASE 6 ----
-    log_info "PHASE 6: CLEANUP"
+    # ---- PHASE 7 ----
+    log_info "PHASE 7: CLEANUP"
 
     for cd in GPUCache "Code Cache" Cache; do
         rm -rf "${dst_profile}/${cd}" 2>/dev/null
