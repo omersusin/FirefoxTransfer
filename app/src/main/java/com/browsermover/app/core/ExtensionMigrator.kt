@@ -285,6 +285,9 @@ as CRX, and their storage.local values are converted to Chromium's LevelDB. The 
 </body></html>"""
     }
 
+    fun storeLink(name: String, targetEngine: BrowserType): String =
+        storeSearchUrl(name, targetEngine)
+
     private fun storeSearchUrl(name: String, targetEngine: BrowserType): String {
         val encoded = try {
             URLEncoder.encode(name, "UTF-8")

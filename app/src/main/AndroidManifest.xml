@@ -3,6 +3,40 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Browser packages are declared explicitly so BrowserCatalog can list
+         installed browsers without QUERY_ALL_PACKAGES. -->
+    <queries>
+        <package android:name="org.mozilla.firefox" />
+        <package android:name="org.mozilla.firefox_beta" />
+        <package android:name="org.mozilla.fenix.nightly" />
+        <package android:name="org.mozilla.fenix" />
+        <package android:name="org.mozilla.focus" />
+        <package android:name="org.mozilla.klar" />
+        <package android:name="org.mozilla.fennec_fdroid" />
+        <package android:name="org.torproject.torbrowser" />
+        <package android:name="org.torproject.torbrowser_alpha" />
+        <package android:name="us.spotco.fennec_dos" />
+        <package android:name="io.github.forkmaintainers.iceraven" />
+        <package android:name="org.gnu.icecat" />
+        <package android:name="com.android.chrome" />
+        <package android:name="com.chrome.beta" />
+        <package android:name="com.chrome.dev" />
+        <package android:name="com.chrome.canary" />
+        <package android:name="org.barebrowser" />
+        <package android:name="com.brave.browser" />
+        <package android:name="com.brave.browser_beta" />
+        <package android:name="com.kiwibrowser.browser" />
+        <package android:name="com.vivaldi.browser" />
+        <package android:name="com.microsoft.emmx" />
+        <package android:name="com.opera.browser" />
+        <package android:name="com.sec.android.app.sbrowser" />
+        <package android:name="com.duckduckgo.mobile.android" />
+        <package android:name="com.yandex.browser" />
+        <package android:name="com.mi.globalbrowser" />
+        <package android:name="com.uc.browser.en" />
+        <package android:name="com.quark.browser" />
+    </queries>
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

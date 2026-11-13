@@ -1,0 +1,188 @@
+<resources>
+    <string name="app_name">Tarayıcı Taşıyıcı</string>
+    <string name="app_description">Tarayıcı verilerini root erişimiyle taşıyın.</string>
+
+    <!-- Home -->
+    <string name="brand">TARAYICI TAŞIYICI</string>
+    <string name="home_title">Tarama hayatını taşı.</string>
+    <string name="home_subtitle">Yer imleri, geçmiş, sekmeler, uzantılar ve Firefox Account — bulut eşitlemesi olmadan.</string>
+    <string name="access_title">Ayrıcalıklı erişim</string>
+    <string name="access_checking">Ayrıcalıklı erişim denetleniyor…</string>
+    <string name="access_ready">Root erişimi hazır</string>
+    <string name="access_ready_desc">Uygulamaya özel tarayıcı verileri okunabilir ve yazılabilir.</string>
+    <string name="access_shizuku_ready">Shizuku root hazır</string>
+    <string name="access_missing">Root erişimi gerekli</string>
+    <string name="access_missing_desc">Bu uygulamaya root verin. ADB modundaki Shizuku uygulamaya özel verileri okuyamaz.</string>
+    <string name="action_request_shizuku">Shizuku kur</string>
+    <string name="action_retry">Yeniden dene</string>
+    <string name="action_check">Erişimi denetle</string>
+    <string name="source">Kaynak</string>
+    <string name="target">Hedef</string>
+    <string name="choose_source">Kaynak tarayıcıyı seç</string>
+    <string name="choose_target">Hedef tarayıcıyı seç</string>
+    <string name="change">Değiştir</string>
+    <string name="swap">Kaynak ve hedefi değiştir</string>
+    <string name="no_browser_selected">Seçilmedi</string>
+    <string name="no_installed_browsers">Bu telefonda desteklenen tarayıcı bulunamadı.</string>
+    <string name="pick_browser">Tarayıcı seç</string>
+    <string name="installed_browsers">Yüklü tarayıcılar</string>
+    <string name="other_package">Diğer paket</string>
+    <string name="package_hint">com.ornek.tarayici</string>
+    <string name="add_package">Ekle</string>
+    <string name="package_not_installed">Paket yüklü değil.</string>
+    <string name="engine_gecko">Firefox motoru</string>
+    <string name="engine_chromium">Chromium motoru</string>
+    <string name="engine_unknown">Bilinmeyen motor</string>
+    <string name="route_same">Aynı motor · tam profil</string>
+    <string name="route_cross">Farklı motor · dönüştürülen veri</string>
+    <string name="route_pick_both">Farklı iki tarayıcı seçin</string>
+    <string name="same_browser">Kaynak ve hedef farklı olmalı.</string>
+    <string name="what_moves">Neler taşınır</string>
+    <string name="choose_browsers">Tarayıcıları seç</string>
+    <string name="move_bookmarks">Yer imleri ve geçmiş</string>
+    <string name="move_bookmarks_desc">Yerler, simgeler ve ziyaret verileri</string>
+    <string name="move_site_data">Parolalar ve site verileri</string>
+    <string name="move_site_data_desc">Oturumlar, çerezler, formlar ve izinler</string>
+    <string name="move_tabs">Açık sekmeler</string>
+    <string name="move_tabs_desc">Kaynak sekme çubuğunu yeniden aç</string>
+    <string name="move_extensions">Uzantılar</string>
+    <string name="move_extensions_desc">Verileri kopyala veya mağaza eşleşmesi bul</string>
+    <string name="account_title">Firefox Account</string>
+    <string name="account_checking">Hesap durumu denetleniyor…</string>
+    <string name="account_found">%1$s olarak oturum açıldı</string>
+    <string name="account_found_no_email">Firefox Account bulundu</string>
+    <string name="account_missing">Kaynakta hesap bulunamadı</string>
+    <string name="account_target_missing">Hedef oturum açmamış; kaynak hesap kullanılacak</string>
+    <string name="account_secure">Nightly/debug hesabı Keystore ile korunuyor ve kopyalanamaz</string>
+    <string name="account_disabled">Hedefin oturumunu açık tutmak için açın</string>
+    <string name="account_note_release">Release ve Beta hesabı düz metin tercihinde saklar, bu yüzden taşınabilir.</string>
+    <string name="account_note_secure">Hedefte bir kez oturum açın. Nightly/debug belirteçleri kaynak uygulamaya bağlıdır.</string>
+    <string name="account_toggle">Hesap durumunu kopyala</string>
+    <string name="account_not_applicable">Hesap aktarımı yalnızca Firefox motorlu tarayıcılar arasında çalışır.</string>
+    <string name="review">Taşımayı gözden geçir</string>
+
+    <!-- Review -->
+    <string name="review_title">Hazır olduğunuzda başlayın.</string>
+    <string name="review_subtitle">Veriler yazılırken iki tarayıcı da durdurulacak.</string>
+    <string name="data_selection">Veri seçimi</string>
+    <string name="always_included">Her zaman dahil</string>
+    <string name="toggle_account">Firefox Account</string>
+    <string name="toggle_extensions">Uzantılar</string>
+    <string name="toggle_tabs">Açık sekmeler</string>
+    <string name="backup_title">Güvenlik yedeği</string>
+    <string name="backup_desc">Önce hedef profil yedeklenir. Sonuç ekranından geri yükleyebilirsiniz.</string>
+    <string name="start_migration">Taşımayı başlat</string>
+    <string name="starting">Başlatılıyor…</string>
+
+    <!-- Progress -->
+    <string name="progress_title">Üzerinde çalışılıyor</string>
+    <string name="progress_subtitle">Taşıma bitene kadar bu ekranı açık tutun.</string>
+    <string name="progress_percent">%1$d%%</string>
+    <string name="progress_step">Adım %1$d / %2$d</string>
+    <string name="progress_preparing">Hazırlanıyor</string>
+    <string name="progress_detecting">Tarayıcılar algılanıyor</string>
+    <string name="progress_writing">Veriler yazılıyor</string>
+    <string name="progress_extensions">Uzantılar</string>
+    <string name="progress_tabs">Açık sekmeler</string>
+    <string name="progress_finishing">Bitiriliyor</string>
+    <string name="log_title">Canlı günlük</string>
+    <string name="log_show">Günlüğü göster</string>
+    <string name="log_hide">Günlüğü gizle</string>
+    <string name="do_not_close">Uygulamayı kapatmayın veya uykuya almayın.</string>
+
+    <!-- Result -->
+    <string name="result_success">Taşıma tamamlandı</string>
+    <string name="result_partial">Taşıma uyarılarla tamamlandı</string>
+    <string name="result_failure">Taşıma başarısız</string>
+    <string name="result_success_desc">Verileriniz hedef tarayıcıda. Firefox veya Chrome profilini yeniden oluştursun diye bir kez açın.</string>
+    <string name="result_partial_desc">Ana veriler yazıldı ancak bazı öğeler ilgi bekliyor.</string>
+    <string name="result_failure_desc">Hiçbir şey kaybolmadı. Ayrıntıları inceleyip yeniden deneyin.</string>
+    <string name="result_details">Ayrıntılar</string>
+    <string name="result_warnings">Uyarılar</string>
+    <string name="result_no_warnings">Uyarı yok.</string>
+    <string name="result_backup">Yedek: %1$s</string>
+    <string name="result_log">Tam günlüğü görüntüle</string>
+    <string name="result_extensions">Uzantıları görüntüle</string>
+    <string name="result_restore">Yedeği geri yükle</string>
+    <string name="result_new">Yeni taşıma</string>
+    <string name="result_open_report">Uzantı raporunu aç</string>
+    <string name="result_share">Raporu paylaş</string>
+    <string name="result_duration">%1$s sürdü</string>
+    <string name="result_route">Rota: %1$s → %2$s</string>
+
+    <!-- Extensions -->
+    <string name="extensions_title">Uzantılar</string>
+    <string name="extensions_subtitle">Kaynak uzantılar ve hedefteki en yakın eşleşmeleri.</string>
+    <string name="extensions_empty">Uzantı bulunamadı. Onlar olmadan devam edebilirsiniz.</string>
+    <string name="extensions_source_count">%1$d kaynak uzantı</string>
+    <string name="extensions_matched">%1$d ad eşleşmesi</string>
+    <string name="extensions_enabled">Etkin</string>
+    <string name="extensions_disabled">Devre dışı</string>
+    <string name="extensions_matched_label">Hedefte de var</string>
+    <string name="extensions_not_matched">Hedefte yok</string>
+    <string name="extensions_search">Mağazada ara</string>
+    <string name="extensions_data">Veri yolları</string>
+    <string name="extensions_note">Chrome son bir “Chrome tarayıcısına ekle” dokunuşu isteyebilir. Firefox uzantıları sessizce kurulamaz.</string>
+
+    <!-- Common actions -->
+    <string name="close">Kapat</string>
+    <string name="back">Geri</string>
+    <string name="cancel">İptal</string>
+    <string name="delete">Sil</string>
+    <string name="details">Ayrıntılar</string>
+    <string name="copy">Kopyala</string>
+    <string name="copied">Kopyalandı</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Ayarlar</string>
+    <string name="settings_language">Dil</string>
+    <string name="settings_language_system">Sistem varsayılanı</string>
+    <string name="settings_language_en">İngilizce</string>
+    <string name="settings_language_tr">Türkçe</string>
+    <string name="settings_language_desc">Telefon dilini değiştirmeden uygulama dilini değiştirin.</string>
+    <string name="settings_access">Ayrıcalıklı erişim</string>
+    <string name="settings_backups">Yedekler</string>
+    <string name="settings_backups_count">%1$d yedek bulundu</string>
+    <string name="settings_delete_backups">Tüm yedekleri sil</string>
+    <string name="settings_delete_backups_desc">Yalnızca Tarayıcı Taşıyıcı tarafından oluşturulan kopyaları siler.</string>
+    <string name="settings_about">Hakkında</string>
+    <string name="settings_version">Sürüm %1$s</string>
+    <string name="settings_root_ready">Root hazır</string>
+    <string name="settings_root_missing">Root yok</string>
+    <string name="settings_shizuku">Shizuku</string>
+    <string name="settings_shizuku_desc">Shizuku yalnızca root olarak başlatıldığında çalışır.</string>
+    <string name="settings_retry_access">Erişimi yenile</string>
+    <string name="language_changed">Dil güncellendi</string>
+
+    <!-- Dialogs -->
+    <string name="confirm_delete_backups">Tüm yedekler silinsin mi?</string>
+    <string name="confirm_delete_backups_msg">Önceki taşımaları geri alamayacaksınız.</string>
+    <string name="restore_title">En son yedek geri yüklensin mi?</string>
+    <string name="restore_msg">Hedef tarayıcı durdurulacak ve profili %1$s konumundan geri yüklenecek.</string>
+    <string name="restore">Geri yükle</string>
+    <string name="restored">Yedek geri yüklendi</string>
+    <string name="restore_failed">Geri yükleme başarısız</string>
+    <string name="no_backup">Yedek bulunamadı.</string>
+    <string name="deleted_backups">%1$d yedek silindi.</string>
+    <string name="report_not_found">Rapor bulunamadı.</string>
+    <string name="share_report_subject">Tarayıcı Taşıyıcı uzantı raporu</string>
+    <string name="share_report_text">Uzantı taşıma raporu</string>
+
+    <!-- Errors and status -->
+    <string name="error_select_both">Bir kaynak ve hedef tarayıcı seçin.</string>
+    <string name="error_not_installed">İki tarayıcı paketi de yüklü olmalı.</string>
+    <string name="error_root">Root erişimi gerekli.</string>
+    <string name="error_same">Kaynak ve hedef farklı olmalı.</string>
+    <string name="account_unknown">Hesap durumu taşımadan önce denetlenecek.</string>
+    <string name="source_missing">Kaynak veriler bulunamadı. Kaynak tarayıcıyı bir kez açın.</string>
+    <string name="target_missing">Hedef veriler bulunamadı. Otomatik oluşturulacak.</string>
+    <string name="shizuku_not_installed">Shizuku yüklü değil veya çalışmıyor.</string>
+    <string name="shizuku_permission_denied">Shizuku izni verilmedi.</string>
+    <string name="shizuku_adb_warning">Shizuku ADB modunda (UID 2000) çalışıyor. Uygulamaya özel tarayıcı verilerini okuyamaz. Root kullanın veya Shizuku\'yu root ile başlatın.</string>
+    <string name="root_request_hint">İstendiğinde Tarayıcı Taşıyıcı uygulamasına root izni verin.</string>
+    <string name="access_uid">UID %1$d</string>
+    <string name="route_summary">%1$s → %2$s</string>
+    <string name="not_available">Kullanılamıyor</string>
+    <string name="extension_count">%1$d</string>
+    <string name="version_unknown">bilinmiyor</string>
+</resources>

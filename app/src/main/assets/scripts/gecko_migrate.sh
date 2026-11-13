@@ -1,6 +1,6 @@
 #!/system/bin/sh
 # ============================================================
-#  gecko_migrate.sh v6
+#  gecko_migrate.sh v7
 #  Fenix fix: DBs and tabs under files/
 # ============================================================
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
@@ -11,6 +11,13 @@ fi
 
 SRC="$1"
 DST="$2"
+# Optional feature flags supplied by the app:
+#   $3 = copy Firefox Account state (Gecko release/beta plaintext store)
+#   $4 = migrate extensions
+#   $5 = migrate open tabs
+MIGRATE_ACCOUNT="${3:-1}"
+MIGRATE_EXTENSIONS="${4:-1}"
+MIGRATE_TABS="${5:-1}"
 
 G_PROFILE=""
 G_DATA_DIR=""
@@ -205,9 +212,10 @@ main() {
     log_init
 
     log_info "============================================"
-    log_info "  Gecko Migration v6 (Fenix compatible)"
+    log_info "  Gecko Migration v7 (Fenix compatible)"
     log_info "  Source: $SRC"
     log_info "  Target: $DST"
+    log_info "  Options: account=$MIGRATE_ACCOUNT extensions=$MIGRATE_EXTENSIONS tabs=$MIGRATE_TABS"
     log_info "============================================"
 
     check_root
@@ -306,6 +314,8 @@ main() {
         fi
     done
 
+    # --- Open tabs (optional) ---
+    if [ "$MIGRATE_TABS" = "1" ]; then
     # --- tabs.sqlite (Tabs) ---
     src_file=$(gecko_src_path "tabs.sqlite" 2>/dev/null || true)
     if [ -n "$src_file" ]; then
@@ -351,6 +361,9 @@ main() {
             safe_cp "${src_profile}/sessionstore.jsonlz4"                     "${dst_profile}/sessionstore.jsonlz4" "sessionstore.jsonlz4"
         fi
     fi
+    else
+        log_info "Open-tab migration disabled; target tabs preserved"
+    fi
 
     # --- push.sqlite ---
     src_file=$(gecko_src_path "push.sqlite" 2>/dev/null || true)
@@ -384,6 +397,7 @@ main() {
     # ==== PHASE 4: Extensions ====
     log_info "PHASE 4: EXTENSION MIGRATION"
 
+    if [ "$MIGRATE_EXTENSIONS" = "1" ]; then
     safe_cp "${src_profile}/extensions" "${dst_profile}/extensions" "extensions/"
     safe_cp "${src_profile}/extensions.json" "${dst_profile}/extensions.json" "extensions.json"
     safe_cp "${src_profile}/extension-preferences.json" "${dst_profile}/extension-preferences.json" "extension-preferences.json"
@@ -435,6 +449,9 @@ main() {
         done
         log_ok "Extension stores: $ext_count"
     fi
+    else
+        log_info "Extension migration disabled; target extensions preserved"
+    fi
 
     # ==== PHASE 5: Firefox Account / Sync ====
     log_info "PHASE 5: FIREFOX ACCOUNT AND SYNC"
@@ -443,19 +460,14 @@ main() {
     local dst_sp="${dst_dd}/shared_prefs"
     if [ -d "$src_sp" ]; then
         mkdir -p "$dst_sp" 2>/dev/null
-        local skipped_account=0
         for f in "$src_sp"/*; do
             [ ! -f "$f" ] && continue
             local fname=$(basename "$f")
 
-            # Firefox Account/Sync state and Android Keystore-bound crypto
-            # preferences cannot be transplanted between packages. Copying
-            # them makes the target look signed-in with undecryptable tokens
-            # and can leave it stuck on the account screen. Keep the target's
-            # own files and let the user sign in again.
+            # Account state is handled explicitly below. Crypto files are
+            # Keystore-bound and must never be transplanted.
             case "$fname" in
                 Fxa*|fxa*|SyncAuthInfoCache.xml|syncPrefs.xml|syncEngines.xml|sync.logins.prefs.xml|mozac_feature_accounts_push.xml|*Crypto.xml)
-                    skipped_account=$((skipped_account + 1))
                     continue
                     ;;
                 "${DST}_preferences.xml")
@@ -466,9 +478,45 @@ main() {
 
             safe_cp "$f" "${dst_sp}/${fname}" "shared_pref: $fname"
         done
-        if [ "$skipped_account" -gt 0 ]; then
-            log_warn "Firefox Account/Keystore prefs left untouched ($skipped_account files). The target keeps its own account state; if it was signed out before migration, sign in once in the target."
-        fi
+    fi
+
+    if [ "$MIGRATE_ACCOUNT" != "1" ]; then
+        log_info "Firefox Account copy disabled; target account state preserved"
+    elif [ -f "$src_sp/fxaStateAC.xml" ] || [ -f "$src_sp/fxaStatePrefAC.xml" ]; then
+        # Firefox Nightly/debug uses SecureAbove22Preferences and a key that is
+        # bound to the source app UID. Copying it produces an undecryptable
+        # account and can leave the target stuck on the account screen.
+        case "$SRC" in
+            *nightly*|*debug*)
+                log_warn "Firefox Account uses Keystore-protected Nightly/debug storage; account state was not copied. Sign in once in the target."
+                ;;
+            *)
+                # Release/beta can have an old secure file left behind. Their
+                # live account state is the plain-text fxaAppState.xml.
+                if [ -f "$src_sp/fxaAppState.xml" ]; then
+                    safe_cp "$src_sp/fxaAppState.xml" "$dst_sp/fxaAppState.xml" "Firefox Account state (release/beta)"
+                    for n in SyncAuthInfoCache.xml syncPrefs.xml syncEngines.xml sync.logins.prefs.xml mozac_feature_accounts_push.xml; do
+                        [ -f "$src_sp/$n" ] && safe_cp "$src_sp/$n" "$dst_sp/$n" "sync pref: $n"
+                    done
+                    log_ok "Firefox Account state copied; the target should stay signed in"
+                    log_info "Target account state was backed up in $BACKUP_DIR/target_shared_prefs"
+                else
+                    log_warn "Firefox Account uses Keystore-protected storage; account state was not copied. Sign in once in the target."
+                fi
+                ;;
+        esac
+    elif [ -f "$src_sp/fxaAppState.xml" ]; then
+        # Firefox release/beta use the plain-text shared preference store:
+        # fxaAppState.xml contains the serialized FxA state under "fxaState".
+        # This is the path that has always worked for release/beta migrations.
+        safe_cp "$src_sp/fxaAppState.xml" "$dst_sp/fxaAppState.xml" "Firefox Account state (release/beta)"
+        for n in SyncAuthInfoCache.xml syncPrefs.xml syncEngines.xml sync.logins.prefs.xml mozac_feature_accounts_push.xml; do
+            [ -f "$src_sp/$n" ] && safe_cp "$src_sp/$n" "$dst_sp/$n" "sync pref: $n"
+        done
+        log_ok "Firefox Account state copied; the target should stay signed in"
+        log_info "Target account state was backed up in $BACKUP_DIR/target_shared_prefs"
+    else
+        log_info "No Firefox Account state found in source; target account preserved"
     fi
 
     safe_cp "${src_files}/firefox.settings.services.mozilla.com" "${dst_files}/firefox.settings.services.mozilla.com" "sync settings"

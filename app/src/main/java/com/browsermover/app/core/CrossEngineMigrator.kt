@@ -35,6 +35,7 @@ class CrossEngineMigrator(private val context: Context) {
         targetPkg: String,
         sourceEngine: BrowserType,
         targetEngine: BrowserType,
+        options: MigrationOptions = MigrationOptions(),
         onProgress: suspend (MigrationResult.Progress) -> Unit
     ): MigrationResult = withContext(Dispatchers.IO) {
         val warnings = mutableListOf<String>()
@@ -175,30 +176,38 @@ class CrossEngineMigrator(private val context: Context) {
                 return@withContext MigrationResult.Failure(detail, "", LOG_FILE)
             }
 
-            val extensionSummary = migrateExtensionInventory(
-                sourcePkg = sourcePkg,
-                targetPkg = targetPkg,
-                sourceEngine = sourceEngine,
-                targetEngine = targetEngine,
-                sourceChromium = sourceChromium,
-                sourceGecko = sourceGecko,
-                targetChromium = targetChromium,
-                targetGecko = targetGecko,
-                onProgress = onProgress,
-                warnings = warnings
-            )
-
-            val tabSummary = try {
-                restoreOpenTabs(
+            val extensionSummary = if (options.includeExtensions) {
+                migrateExtensionInventory(
+                    sourcePkg = sourcePkg,
+                    targetPkg = targetPkg,
                     sourceEngine = sourceEngine,
+                    targetEngine = targetEngine,
                     sourceChromium = sourceChromium,
                     sourceGecko = sourceGecko,
-                    targetPkg = targetPkg,
+                    targetChromium = targetChromium,
+                    targetGecko = targetGecko,
                     onProgress = onProgress,
                     warnings = warnings
                 )
-            } catch (e: Exception) {
-                warnings.add("Open tabs could not be transferred: ${e.message}")
+            } else {
+                null
+            }
+
+            val tabSummary = if (options.includeOpenTabs) {
+                try {
+                    restoreOpenTabs(
+                        sourceEngine = sourceEngine,
+                        sourceChromium = sourceChromium,
+                        sourceGecko = sourceGecko,
+                        targetPkg = targetPkg,
+                        onProgress = onProgress,
+                        warnings = warnings
+                    )
+                } catch (e: Exception) {
+                    warnings.add("Open tabs could not be transferred: ${e.message}")
+                    null
+                }
+            } else {
                 null
             }
 

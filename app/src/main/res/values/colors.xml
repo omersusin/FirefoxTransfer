@@ -1,15 +1,61 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg_dark">#121212</color>
-    <color name="bg_card">#1E1E1E</color>
-    <color name="bg_card_selected">#1A237E</color>
-    <color name="accent_blue">#2196F3</color>
-    <color name="accent_green">#4CAF50</color>
-    <color name="accent_orange">#FFA726</color>
-    <color name="accent_red">#EF5350</color>
-    <color name="text_primary">#FFFFFF</color>
-    <color name="text_secondary">#888888</color>
-    <color name="text_tertiary">#666666</color>
-    <color name="border">#333333</color>
+    <!-- Material 3 Expressive palette: deep ink, cool blue, warm coral. -->
+    <color name="md_primary">#A9C7FF</color>
+    <color name="md_on_primary">#003064</color>
+    <color name="md_primary_container">#1D4F91</color>
+    <color name="md_on_primary_container">#D7E3FF</color>
+
+    <color name="md_secondary">#BCC7DC</color>
+    <color name="md_on_secondary">#263141</color>
+    <color name="md_secondary_container">#33415A</color>
+    <color name="md_on_secondary_container">#D8E3F8</color>
+
+    <color name="md_tertiary">#FFB4A1</color>
+    <color name="md_on_tertiary">#5C1908</color>
+    <color name="md_tertiary_container">#7A2E1C</color>
+    <color name="md_on_tertiary_container">#FFDBD2</color>
+
+    <color name="md_error">#FFB4AB</color>
+    <color name="md_on_error">#690005</color>
+    <color name="md_error_container">#93000A</color>
+    <color name="md_on_error_container">#FFDAD6</color>
+
+    <color name="md_background">#0A0F16</color>
+    <color name="md_on_background">#EAF1FB</color>
+    <color name="md_surface">#0F1622</color>
+    <color name="md_on_surface">#EAF1FB</color>
+    <color name="md_surface_variant">#223247</color>
+    <color name="md_on_surface_variant">#A9B6C9</color>
+
+    <color name="md_surface_container_lowest">#0A0F16</color>
+    <color name="md_surface_container_low">#121B29</color>
+    <color name="md_surface_container">#162132</color>
+    <color name="md_surface_container_high">#1B283B</color>
+    <color name="md_surface_container_highest">#223247</color>
+
+    <color name="md_outline">#8B95A7</color>
+    <color name="md_outline_variant">#2A374A</color>
+
+    <color name="md_success">#7EDCA4</color>
+    <color name="md_warning">#F4C66A</color>
+    <color name="md_info">#8ECDFF</color>
+    <color name="md_scrim">#000000</color>
+
     <color name="white">#FFFFFF</color>
+    <color name="transparent">#00000000</color>
+    <color name="hero_gradient_start">#1C3558</color>
+    <color name="hero_gradient_end">#101A29</color>
+
+    <!-- Legacy aliases kept for existing launcher/drawable resources. -->
+    <color name="bg_dark">@color/md_background</color>
+    <color name="bg_card">@color/md_surface_container</color>
+    <color name="accent_blue">@color/md_primary</color>
+    <color name="accent_green">@color/md_success</color>
+    <color name="accent_orange">@color/md_warning</color>
+    <color name="accent_red">@color/md_error</color>
+    <color name="text_primary">@color/md_on_background</color>
+    <color name="text_secondary">@color/md_on_surface_variant</color>
+    <color name="text_tertiary">@color/md_outline</color>
+    <color name="border">@color/md_outline_variant</color>
 </resources>

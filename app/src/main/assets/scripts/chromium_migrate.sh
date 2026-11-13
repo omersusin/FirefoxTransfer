@@ -10,6 +10,10 @@ fi
 
 SRC="$1"
 DST="$2"
+# $3 = account (unused for Chromium), $4 = extensions, $5 = open tabs
+MIGRATE_ACCOUNT="${3:-1}"
+MIGRATE_EXTENSIONS="${4:-1}"
+MIGRATE_TABS="${5:-1}"
 
 G_BASE=""
 G_PROFILE=""
@@ -176,9 +180,10 @@ main() {
     log_init
 
     log_info "============================================"
-    log_info "  Chromium Migration v3"
+    log_info "  Chromium Migration v4"
     log_info "  Source: $SRC"
     log_info "  Target: $DST"
+    log_info "  Options: extensions=$MIGRATE_EXTENSIONS tabs=$MIGRATE_TABS"
     log_info "============================================"
 
     check_root
@@ -263,6 +268,7 @@ main() {
     # ---- PHASE 2 ----
     log_info "PHASE 2: OPEN-TAB / SESSION MIGRATION"
 
+    if [ "$MIGRATE_TABS" = "1" ]; then
     # Chromium keeps the live session in Sessions/Session_* (modern) or in
     # Current Session/Current Tabs (older forks). Copying these files is safe
     # only engine-to-engine; cross-engine tab transfer is handled in Kotlin by
@@ -276,10 +282,14 @@ main() {
             safe_cp "${src_profile}/${sf}" "${dst_profile}/${sf}" "$sf"
         fi
     done
+    else
+        log_info "Open-tab migration disabled; target tabs preserved"
+    fi
 
     # ---- PHASE 3 ----
     log_info "PHASE 3: EXTENSION MIGRATION"
 
+    if [ "$MIGRATE_EXTENSIONS" = "1" ]; then
     safe_cp "${src_profile}/Extensions" "${dst_profile}/Extensions" "Extensions/"
     safe_cp "${src_profile}/Local Extension Settings" "${dst_profile}/Local Extension Settings" "Local Extension Settings/"
     safe_cp "${src_profile}/Sync Extension Settings" "${dst_profile}/Sync Extension Settings" "Sync Extension Settings/"
@@ -292,6 +302,9 @@ main() {
                 safe_cp "$idb" "${dst_profile}/IndexedDB/$(basename "$idb")" "ext-idb"
             fi
         done
+    fi
+    else
+        log_info "Extension migration disabled; target extensions preserved"
     fi
 
     # ---- PHASE 4 ----

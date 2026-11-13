@@ -79,6 +79,7 @@ class DataMover(private val context: Context) {
     suspend fun migrate(
         sourcePkg: String,
         targetPkg: String,
+        options: MigrationOptions = MigrationOptions(),
         onProgress: suspend (MigrationResult.Progress) -> Unit
     ): MigrationResult = withContext(Dispatchers.IO) {
 
@@ -111,7 +112,7 @@ class DataMover(private val context: Context) {
                     "Cross-engine transfer: ${srcEngine.name} -> ${dstEngine.name}", 6
                 )
                 return@withContext crossEngineMigrator.migrate(
-                    sourcePkg, targetPkg, srcEngine, dstEngine, onProgress
+                    sourcePkg, targetPkg, srcEngine, dstEngine, options, onProgress
                 )
             }
 
@@ -146,7 +147,13 @@ class DataMover(private val context: Context) {
 
             val exitCode = RootHelper.execStreaming(
                 scriptPath = "$SCRIPTS_DIR/$scriptName",
-                args = listOf(sourcePkg, targetPkg)
+                args = listOf(
+                    sourcePkg,
+                    targetPkg,
+                    if (options.copyFirefoxAccount) "1" else "0",
+                    if (options.includeExtensions) "1" else "0",
+                    if (options.includeOpenTabs) "1" else "0"
+                )
             ) { line ->
                 logLines.add(line)
                 val phaseMatch = Regex("""PHASE\s+(\d+):\s*(.*)""").find(line)

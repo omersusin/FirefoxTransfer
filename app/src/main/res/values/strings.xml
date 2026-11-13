@@ -1,4 +1,188 @@
 <resources>
-    <string name="app_name">Browser Data Migrator</string>
-    <string name="app_description">Transfer all your browser data with root access.</string>
+    <string name="app_name">Browser Migrator</string>
+    <string name="app_description">Move browser data with root access.</string>
+
+    <!-- Home -->
+    <string name="brand">BROWSER MIGRATOR</string>
+    <string name="home_title">Move your browsing life.</string>
+    <string name="home_subtitle">Bookmarks, history, tabs, extensions and your Firefox Account — without cloud sync.</string>
+    <string name="access_title">Privileged access</string>
+    <string name="access_checking">Checking privileged access…</string>
+    <string name="access_ready">Root access ready</string>
+    <string name="access_ready_desc">Private browser data can be read and written.</string>
+    <string name="access_shizuku_ready">Shizuku root ready</string>
+    <string name="access_missing">Root access needed</string>
+    <string name="access_missing_desc">Grant root to this app. Shizuku in ADB mode cannot read app-private data.</string>
+    <string name="action_request_shizuku">Set up Shizuku</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_check">Check access</string>
+    <string name="source">From</string>
+    <string name="target">To</string>
+    <string name="choose_source">Choose source browser</string>
+    <string name="choose_target">Choose target browser</string>
+    <string name="change">Change</string>
+    <string name="swap">Swap source and target</string>
+    <string name="no_browser_selected">Not selected</string>
+    <string name="no_installed_browsers">No supported browser was found on this phone.</string>
+    <string name="pick_browser">Pick a browser</string>
+    <string name="installed_browsers">Installed browsers</string>
+    <string name="other_package">Other package</string>
+    <string name="package_hint">com.example.browser</string>
+    <string name="add_package">Add</string>
+    <string name="package_not_installed">Package is not installed.</string>
+    <string name="engine_gecko">Firefox engine</string>
+    <string name="engine_chromium">Chromium engine</string>
+    <string name="engine_unknown">Unknown engine</string>
+    <string name="route_same">Same engine · full profile</string>
+    <string name="route_cross">Cross-engine · converted data</string>
+    <string name="route_pick_both">Pick two different browsers</string>
+    <string name="same_browser">Source and target must be different.</string>
+    <string name="choose_browsers">Choose browsers</string>
+    <string name="what_moves">What moves</string>
+    <string name="move_bookmarks">Bookmarks &amp; history</string>
+    <string name="move_bookmarks_desc">Places, favicons and visit data</string>
+    <string name="move_site_data">Passwords &amp; site data</string>
+    <string name="move_site_data_desc">Logins, cookies, forms and permissions</string>
+    <string name="move_tabs">Open tabs</string>
+    <string name="move_tabs_desc">Reopen the source tab tray</string>
+    <string name="move_extensions">Extensions</string>
+    <string name="move_extensions_desc">Copy data, or find store matches</string>
+    <string name="account_title">Firefox Account</string>
+    <string name="account_checking">Checking account state…</string>
+    <string name="account_found">Signed in as %1$s</string>
+    <string name="account_found_no_email">Firefox Account found</string>
+    <string name="account_missing">No account found in the source</string>
+    <string name="account_target_missing">Target is signed out; the source account will be used</string>
+    <string name="account_secure">Nightly/debug account is Keystore-protected and cannot be copied</string>
+    <string name="account_disabled">Turn on to keep the target signed in</string>
+    <string name="account_note_release">Release and Beta store the account in a plain-text preference, so it can be moved.</string>
+    <string name="account_note_secure">Sign in once in the target. Nightly/debug tokens are bound to the source app.</string>
+    <string name="account_toggle">Copy account state</string>
+    <string name="account_not_applicable">Account transfer only works between Firefox-engine browsers.</string>
+    <string name="review">Review migration</string>
+
+    <!-- Review -->
+    <string name="review_title">Ready when you are.</string>
+    <string name="review_subtitle">Both browsers will be stopped while data is written.</string>
+    <string name="data_selection">Data selection</string>
+    <string name="always_included">Always included</string>
+    <string name="toggle_account">Firefox Account</string>
+    <string name="toggle_extensions">Extensions</string>
+    <string name="toggle_tabs">Open tabs</string>
+    <string name="backup_title">Safety backup</string>
+    <string name="backup_desc">The target profile is backed up first. You can restore it from the result screen.</string>
+    <string name="start_migration">Start migration</string>
+    <string name="starting">Starting…</string>
+
+    <!-- Progress -->
+    <string name="progress_title">Working on it</string>
+    <string name="progress_subtitle">Keep this screen open until the migration finishes.</string>
+    <string name="progress_percent">%1$d%%</string>
+    <string name="progress_step">Step %1$d of %2$d</string>
+    <string name="progress_preparing">Preparing</string>
+    <string name="progress_detecting">Detecting browsers</string>
+    <string name="progress_writing">Writing data</string>
+    <string name="progress_extensions">Extensions</string>
+    <string name="progress_tabs">Open tabs</string>
+    <string name="progress_finishing">Finishing</string>
+    <string name="log_title">Live log</string>
+    <string name="log_show">Show log</string>
+    <string name="log_hide">Hide log</string>
+    <string name="do_not_close">Do not close the app or put it to sleep.</string>
+
+    <!-- Result -->
+    <string name="result_success">Migration complete</string>
+    <string name="result_partial">Migration finished with warnings</string>
+    <string name="result_failure">Migration failed</string>
+    <string name="result_success_desc">Your data is in the target browser. Open it once to let Firefox or Chrome rebuild its profile.</string>
+    <string name="result_partial_desc">The main data was written, but some items need attention.</string>
+    <string name="result_failure_desc">Nothing was lost. Review the details and try again.</string>
+    <string name="result_details">Details</string>
+    <string name="result_warnings">Warnings</string>
+    <string name="result_no_warnings">No warnings.</string>
+    <string name="result_backup">Backup: %1$s</string>
+    <string name="result_log">View full log</string>
+    <string name="result_extensions">View extensions</string>
+    <string name="result_restore">Restore backup</string>
+    <string name="result_new">New migration</string>
+    <string name="result_open_report">Open extension report</string>
+    <string name="result_share">Share report</string>
+    <string name="result_duration">Took %1$s</string>
+    <string name="result_route">Route: %1$s → %2$s</string>
+
+    <!-- Extensions -->
+    <string name="extensions_title">Extensions</string>
+    <string name="extensions_subtitle">Source extensions and their closest target match.</string>
+    <string name="extensions_empty">No extensions were found. You can continue without them.</string>
+    <string name="extensions_source_count">%1$d source extensions</string>
+    <string name="extensions_matched">%1$d name matches</string>
+    <string name="extensions_enabled">Enabled</string>
+    <string name="extensions_disabled">Disabled</string>
+    <string name="extensions_matched_label">Also in target</string>
+    <string name="extensions_not_matched">Not in target</string>
+    <string name="extensions_search">Search store</string>
+    <string name="extensions_data">Data paths</string>
+    <string name="extensions_note">Chrome may require one final “Add to Chrome” tap. Firefox extensions cannot be installed silently.</string>
+
+    <!-- Common actions -->
+    <string name="close">Close</string>
+    <string name="back">Back</string>
+    <string name="cancel">Cancel</string>
+    <string name="delete">Delete</string>
+    <string name="details">Details</string>
+    <string name="copy">Copy</string>
+    <string name="copied">Copied</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_language_system">System default</string>
+    <string name="settings_language_en">English</string>
+    <string name="settings_language_tr">Türkçe</string>
+    <string name="settings_language_desc">Change the app language without changing the phone language.</string>
+    <string name="settings_access">Privileged access</string>
+    <string name="settings_backups">Backups</string>
+    <string name="settings_backups_count">%1$d backup(s) found</string>
+    <string name="settings_delete_backups">Delete all backups</string>
+    <string name="settings_delete_backups_desc">This only removes copies made by Browser Migrator.</string>
+    <string name="settings_about">About</string>
+    <string name="settings_version">Version %1$s</string>
+    <string name="settings_root_ready">Root ready</string>
+    <string name="settings_root_missing">Root not available</string>
+    <string name="settings_shizuku">Shizuku</string>
+    <string name="settings_shizuku_desc">Shizuku works only when started as root.</string>
+    <string name="settings_retry_access">Refresh access</string>
+    <string name="language_changed">Language updated</string>
+
+    <!-- Dialogs -->
+    <string name="confirm_delete_backups">Delete all backups?</string>
+    <string name="confirm_delete_backups_msg">You will not be able to roll back previous migrations.</string>
+    <string name="restore_title">Restore latest backup?</string>
+    <string name="restore_msg">The target browser will be stopped and its profile restored from %1$s.</string>
+    <string name="restore">Restore</string>
+    <string name="restored">Backup restored</string>
+    <string name="restore_failed">Restore failed</string>
+    <string name="no_backup">No backup found.</string>
+    <string name="deleted_backups">Deleted %1$d backup(s).</string>
+    <string name="report_not_found">Report not found.</string>
+    <string name="share_report_subject">Browser Migrator extension report</string>
+    <string name="share_report_text">Extension migration report</string>
+
+    <!-- Errors and status -->
+    <string name="error_select_both">Choose a source and a target browser.</string>
+    <string name="error_not_installed">Both browser packages must be installed.</string>
+    <string name="error_root">Root access is required.</string>
+    <string name="error_same">Source and target must be different.</string>
+    <string name="account_unknown">Account state will be checked before migration.</string>
+    <string name="source_missing">Source data was not found. Open the source browser once.</string>
+    <string name="target_missing">Target data was not found. It will be created automatically.</string>
+    <string name="shizuku_not_installed">Shizuku is not installed or not running.</string>
+    <string name="shizuku_permission_denied">Shizuku permission was not granted.</string>
+    <string name="shizuku_adb_warning">Shizuku is running in ADB mode (UID 2000). It cannot read app-private browser data. Use root or start Shizuku with root.</string>
+    <string name="root_request_hint">Grant root permission to Browser Migrator when prompted.</string>
+    <string name="access_uid">UID %1$d</string>
+    <string name="route_summary">%1$s → %2$s</string>
+    <string name="not_available">Not available</string>
+    <string name="extension_count">%1$d</string>
+    <string name="version_unknown">unknown</string>
 </resources>

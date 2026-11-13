@@ -42,6 +42,11 @@ object RootHelper {
 
     @Volatile private var suChecked: Boolean? = null
 
+    /** Clear the cached su result so an explicit "Retry" can prompt again. */
+    fun invalidateRootCache() {
+        suChecked = null
+    }
+
     suspend fun checkRoot(): Boolean = withContext(Dispatchers.IO) {
         if (checkSu()) return@withContext true
         if (!ShizukuShell.isRootBackend()) return@withContext false
