@@ -268,7 +268,7 @@ class MainActivity : AppCompatActivity() {
 
         b.screenHome.btnReview.isEnabled = validPair
         b.screenHome.btnReview.alpha = if (validPair) 1f else 0.5f
-        b.screenReview.btnStart.isEnabled = validPair && !isMigrating
+        updateStartButton()
         updateRoute()
 
         val geckoPair = sourceBrowser?.type == BrowserType.GECKO &&
@@ -285,6 +285,23 @@ class MainActivity : AppCompatActivity() {
             b.screenReview.switchAccount.isEnabled = false
         }
         updateExtensionCount()
+    }
+
+    /**
+     * The account toggle is only meaningful after the source shared_prefs have
+     * been inspected. Keep Start disabled until that preflight finishes so a
+     * quick tap cannot silently skip the Firefox Account copy.
+     */
+    private fun updateStartButton() {
+        val validPair = sourceBrowser != null &&
+            targetBrowser != null &&
+            sourceBrowser?.packageName != targetBrowser?.packageName
+        val geckoPair = sourceBrowser?.type == BrowserType.GECKO &&
+            targetBrowser?.type == BrowserType.GECKO
+        val preflightReady = !geckoPair || sourceAccount != null
+        val enabled = validPair && preflightReady && !isMigrating
+        b.screenReview.btnStart.isEnabled = enabled
+        b.screenReview.btnStart.alpha = if (enabled) 1f else 0.55f
     }
 
     private fun renderBrowserCard(browser: InstalledBrowser?, isSource: Boolean) {
@@ -558,6 +575,8 @@ class MainActivity : AppCompatActivity() {
     private fun loadPreflight() {
         preflightJob?.cancel()
         clearPreflight()
+        b.screenReview.btnStart.isEnabled = false
+        b.screenReview.btnStart.alpha = 0.55f
 
         val source = sourceBrowser ?: return
         val target = targetBrowser ?: return
@@ -572,27 +591,45 @@ class MainActivity : AppCompatActivity() {
         }
 
         preflightJob = lifecycleScope.launch {
-            if (geckoPair) {
-                val sourceState = FirefoxAccountInspector.inspect(source.packageName)
-                val targetState = FirefoxAccountInspector.inspect(target.packageName)
-                if (isActive && currentPairIs(source, target)) {
-                    sourceAccount = sourceState
-                    targetAccount = targetState
-                    updateAccountUi()
+            try {
+                if (geckoPair) {
+                    val sourceState = try {
+                        FirefoxAccountInspector.inspect(source.packageName)
+                    } catch (_: Exception) {
+                        FirefoxAccountState()
+                    }
+                    val targetState = try {
+                        FirefoxAccountInspector.inspect(target.packageName)
+                    } catch (_: Exception) {
+                        FirefoxAccountState()
+                    }
+                    if (isActive && currentPairIs(source, target)) {
+                        sourceAccount = sourceState
+                        targetAccount = targetState
+                        updateAccountUi()
+                    }
                 }
-            }
 
-            val preview = BrowserInspector.extensions(
-                source.packageName,
-                source.type,
-                target.packageName,
-                target.type
-            )
-            if (isActive && currentPairIs(source, target)) {
-                extensionPreview = preview
-                updateExtensionCount()
-                if (currentScreen == SCREEN_EXTENSIONS) renderExtensions()
-                if (currentScreen == SCREEN_RESULT) updateResultExtensionButtons()
+                val preview = try {
+                    BrowserInspector.extensions(
+                        source.packageName,
+                        source.type,
+                        target.packageName,
+                        target.type
+                    )
+                } catch (e: Exception) {
+                    BrowserInspector.ExtensionPreview(null, e.message)
+                }
+                if (isActive && currentPairIs(source, target)) {
+                    extensionPreview = preview
+                    updateExtensionCount()
+                    if (currentScreen == SCREEN_EXTENSIONS) renderExtensions()
+                    if (currentScreen == SCREEN_RESULT) updateResultExtensionButtons()
+                }
+            } finally {
+                if (isActive && currentPairIs(source, target)) {
+                    updateStartButton()
+                }
             }
         }
     }
@@ -702,7 +739,7 @@ class MainActivity : AppCompatActivity() {
         migratedTarget = target
         migrationStartedAt = System.currentTimeMillis()
         isMigrating = true
-        b.screenReview.btnStart.isEnabled = false
+        updateStartButton()
         resetProgress()
         showScreen(SCREEN_PROGRESS)
 

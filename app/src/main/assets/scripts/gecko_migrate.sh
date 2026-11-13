@@ -549,7 +549,7 @@ main() {
     fi
 
     stop_pkg "$DST"
-    log_ok "GECKO MIGRATION COMPLETED! (v6)"
+    log_ok "GECKO MIGRATION COMPLETED! (v7)"
 }
 
 if [ -z "$SRC" ] || [ -z "$DST" ]; then
