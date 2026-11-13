@@ -650,7 +650,7 @@ class MainActivity : AppCompatActivity() {
         val email = state?.email
 
         val description = when {
-            state == null -> getString(R.string.account_checking)
+            state == null -> getString(R.string.account_unknown)
             secure -> getString(R.string.account_secure)
             !found -> getString(R.string.account_missing)
             email != null -> getString(R.string.account_found, email)
@@ -666,7 +666,11 @@ class MainActivity : AppCompatActivity() {
         b.screenHome.txtHomeAccountTitle.text = getString(R.string.account_title)
         b.screenHome.txtHomeAccountDesc.text = description + targetNote
         b.screenHome.imgHomeAccountState.setImageResource(
-            if (secure) R.drawable.ic_lock else R.drawable.ic_check
+            when {
+                secure -> R.drawable.ic_lock
+                found -> R.drawable.ic_check
+                else -> R.drawable.ic_account
+            }
         )
         b.screenHome.imgHomeAccountState.imageTintList = ColorStateList.valueOf(
             if (secure) cWarning else if (found) cSuccess else cOnSurfaceVariant
