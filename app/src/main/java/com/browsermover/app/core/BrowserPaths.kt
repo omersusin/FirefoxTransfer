@@ -35,7 +35,8 @@ object BrowserPaths {
     private val CHROMIUM_BASE_DIRS = listOf(
         "app_chrome", "app_chromium", "app_brave", "app_vivaldi",
         "app_edge", "app_sbrowser", "app_kiwi", "app_opera",
-        "app_ddg", "app_yandex", "app_mi", "app_uc", "app_quark"
+        "app_ddg", "app_yandex", "app_mi", "app_uc", "app_quark",
+        "app_barebrowser", "app_chrome_beta"
     )
 
     /** Shell-quote a value so it is safe inside a single-quoted string. */
@@ -163,6 +164,7 @@ object BrowserPaths {
         pkg.contains("kiwi") -> "app_kiwi"
         pkg.contains("opera") -> "app_opera"
         pkg.contains("duckduckgo") -> "app_ddg"
+        pkg.contains("barebrowser") -> "app_barebrowser"
         else -> "app_chrome"
     }
 

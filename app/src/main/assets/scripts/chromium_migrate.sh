@@ -35,6 +35,7 @@ find_chromium_base() {
     for d in \
         app_chrome app_chromium app_brave app_vivaldi app_edge \
         app_sbrowser app_kiwi app_opera app_ddg app_yandex app_mi app_quark \
+        app_barebrowser app_chrome_beta \
     ; do
         if [ -d "${dd}/${d}" ]; then
             G_BASE="${dd}/${d}"
@@ -113,6 +114,7 @@ guess_chromium_base() {
         *kiwi*) echo "app_kiwi" ;;
         *opera*) echo "app_opera" ;;
         *duckduckgo*) echo "app_ddg" ;;
+        *barebrowser*) echo "app_barebrowser" ;;
         *) echo "app_chrome" ;;
     esac
 }
