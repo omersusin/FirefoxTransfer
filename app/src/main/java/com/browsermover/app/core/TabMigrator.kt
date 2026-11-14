@@ -92,6 +92,8 @@ internal object TabMigrator {
                 // sessionstore.jsonlz4 is written by desktop Firefox and is
                 // usually absent on Android.
                 "mozilla_components_session_storage_gecko.json",
+                // AtomicFile keeps the last good snapshot next to the live one.
+                "mozilla_components_session_storage_gecko.json.bak",
                 "sessionstore.jsonlz4", "sessionstore.js",
                 "sessionstore-backups/recovery.jsonlz4",
                 "sessionstore-backups/recovery.js",

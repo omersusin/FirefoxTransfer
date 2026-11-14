@@ -882,7 +882,7 @@ internal object CrossEngineConverter {
                             secure = secureIdx >= 0 && c.getInt(secureIdx) != 0,
                             httpOnly = httpIdx >= 0 && c.getInt(httpIdx) != 0,
                             sameSite = chromeSameSiteToGecko(
-                                if (sameIdx >= 0) c.getInt(sameIdx) else 0
+                                if (sameIdx >= 0) c.getInt(sameIdx) else -1
                             )
                         )
                     )
@@ -1126,18 +1126,21 @@ internal object CrossEngineConverter {
     private fun chromeCookieExpiryToUnix(value: Long): Long =
         if (value > 0) (value - CHROME_EPOCH_OFFSET) / 1_000_000 else 0L
 
+    // Chromium DB values: -1 unspecified, 0 no_restriction, 1 lax,
+    // 2 strict, 3 deprecated extended.
+    // Gecko values: 0 None, 1 Lax, 2 Strict, 256 Unset.
     private fun chromeSameSiteToGecko(value: Int): Int = when (value) {
-        1 -> 0 // no_restriction
-        2 -> 1 // lax
-        3 -> 2 // strict
-        else -> 0
+        0 -> 0 // no_restriction
+        1 -> 1 // lax
+        2 -> 2 // strict
+        else -> 256 // unspecified
     }
 
     private fun geckoSameSiteToChrome(value: Int): Int = when (value) {
-        0 -> 1 // no_restriction
-        1 -> 2 // lax
-        2 -> 3 // strict
-        else -> 0
+        0 -> 0 // no_restriction
+        1 -> 1 // lax
+        2 -> 2 // strict
+        else -> -1 // unspecified
     }
 
     // ------------------------------------------------------------------
@@ -1224,6 +1227,7 @@ internal object CrossEngineConverter {
      * to find.
      */
     private fun geckoUrlHash(url: String): Long {
+        // Places hashes at most the first 1500 UTF-8 bytes of the spec.
         val colon = url.indexOf(':')
         return if (colon > 0) {
             val prefixHash = mozillaHashString(url.substring(0, colon)) and 0xFFFFL
@@ -1234,11 +1238,19 @@ internal object CrossEngineConverter {
         }
     }
 
+    /**
+     * mozilla::HashString / PlacesHashString: the golden-ratio mix runs over
+     * the UTF-8 bytes (nsACString), not Kotlin's UTF-16 code units, and only
+     * the first 1500 bytes are hashed.
+     */
     private fun mozillaHashString(value: String): Long {
+        val bytes = value.toByteArray(Charsets.UTF_8)
+        val limit = minOf(bytes.size, 1500)
         var hash = 0L
-        for (ch in value) {
+        for (i in 0 until limit) {
+            val byte = bytes[i].toLong() and 0xFFL
             val rotated = ((hash shl 5) or (hash ushr 27)) and 0xFFFFFFFFL
-            hash = (0x9E3779B9L * (rotated xor ch.code.toLong())) and 0xFFFFFFFFL
+            hash = (0x9E3779B9L * (rotated xor byte)) and 0xFFFFFFFFL
         }
         return hash
     }
