@@ -989,6 +989,27 @@ class CrossEngineMigrator(private val context: Context) {
         if (!uid.isNullOrBlank()) {
             commands.add("chown $uid:$uid ${BrowserPaths.q(target)} 2>/dev/null || true")
         }
+        // Gecko writes cookies in WAL mode. SQLite may not have checkpointed
+        // the cache copy when we close it, so carry the sidecars along instead
+        // of silently discarding the newest cookies.
+        for (suffix in listOf("-wal", "-shm", "-journal")) {
+            commands.add(
+                "if [ -f ${BrowserPaths.q(local + suffix)} ]; then " +
+                    "cp -f ${BrowserPaths.q(local + suffix)} ${BrowserPaths.q(target + suffix)} && " +
+                    "chmod 600 ${BrowserPaths.q(target + suffix)}; fi"
+            )
+            if (!uid.isNullOrBlank()) {
+                commands.add(
+                    "if [ -f ${BrowserPaths.q(target + suffix)} ]; then " +
+                        "chown $uid:$uid ${BrowserPaths.q(target + suffix)} 2>/dev/null || true; fi"
+                )
+            }
+            commands.add(
+                "if [ -f ${BrowserPaths.q(target + suffix)} ]; then " +
+                    "command -v restorecon >/dev/null 2>&1 && " +
+                    "restorecon -F ${BrowserPaths.q(target + suffix)} 2>/dev/null || true; fi"
+            )
+        }
         commands.add(
             "command -v restorecon >/dev/null 2>&1 && " +
                 "restorecon -F ${BrowserPaths.q(target)} 2>/dev/null || true"

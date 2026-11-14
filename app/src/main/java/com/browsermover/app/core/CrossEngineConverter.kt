@@ -1022,6 +1022,10 @@ internal object CrossEngineConverter {
             } finally {
                 db.endTransaction()
             }
+            try {
+                db.execSQL("PRAGMA wal_checkpoint(TRUNCATE)")
+            } catch (_: Exception) {
+            }
             return CookieImportResult(
                 imported, skipped,
                 "Imported $imported cookie(s) into Firefox" +
@@ -1105,6 +1109,10 @@ internal object CrossEngineConverter {
                 db.setTransactionSuccessful()
             } finally {
                 db.endTransaction()
+            }
+            try {
+                db.execSQL("PRAGMA wal_checkpoint(TRUNCATE)")
+            } catch (_: Exception) {
             }
             return CookieImportResult(
                 imported, skipped,
@@ -1227,8 +1235,9 @@ internal object CrossEngineConverter {
      * to find.
      */
     private fun geckoUrlHash(url: String): Long {
-        // Places hashes at most the first 1500 UTF-8 bytes of the spec.
-        val colon = url.indexOf(':')
+        // Places hashes at most the first 1500 UTF-8 bytes of the spec and
+        // only looks for a scheme colon inside the first 50 characters.
+        val colon = url.take(50).indexOf(':')
         return if (colon > 0) {
             val prefixHash = mozillaHashString(url.substring(0, colon)) and 0xFFFFL
             val urlHash = mozillaHashString(url) and 0xFFFFFFFFL
