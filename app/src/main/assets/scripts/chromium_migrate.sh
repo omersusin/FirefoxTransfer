@@ -244,11 +244,28 @@ main() {
     safe_cp "${src_profile}/Preferences" "${dst_profile}/Preferences" "Preferences"
     safe_cp "${src_profile}/Secure Preferences" "${dst_profile}/Secure Preferences" "Secure Preferences"
 
-    # Chrome moved cookies to Default/Network/Cookies years ago. Copy both the
-    # modern and legacy locations so newer and older forks both work.
-    for f in "Network/Cookies" "Cookies"; do
-        copy_db_with_sidecars "${src_profile}/${f}" "${dst_profile}/${f}" "$f"
-    done
+    # Chrome moved cookies to Default/Network/Cookies years ago. A source
+    # Chrome and a target fork can disagree about which layout is current, so
+    # write the newest source database into every target layout that exists.
+    local src_ck_modern="${src_profile}/Network/Cookies"
+    local src_ck_legacy="${src_profile}/Cookies"
+    local dst_ck_modern="${dst_profile}/Network/Cookies"
+    local dst_ck_legacy="${dst_profile}/Cookies"
+    local had_modern=0
+    local had_legacy=0
+    [ -f "$dst_ck_modern" ] && had_modern=1
+    [ -f "$dst_ck_legacy" ] && had_legacy=1
+    if [ -f "$src_ck_modern" ]; then
+        copy_db_with_sidecars "$src_ck_modern" "$dst_ck_modern" "Network/Cookies"
+        if [ "$had_legacy" = "1" ] || [ "$had_modern" = "0" ]; then
+            copy_db_with_sidecars "$src_ck_modern" "$dst_ck_legacy" "Cookies (legacy layout)"
+        fi
+    elif [ -f "$src_ck_legacy" ]; then
+        copy_db_with_sidecars "$src_ck_legacy" "$dst_ck_legacy" "Cookies"
+        if [ "$had_modern" = "1" ] || [ "$had_legacy" = "0" ]; then
+            copy_db_with_sidecars "$src_ck_legacy" "$dst_ck_modern" "Network/Cookies (modern layout)"
+        fi
+    fi
 
     safe_cp "${src_profile}/Bookmarks" "${dst_profile}/Bookmarks" "Bookmarks"
 

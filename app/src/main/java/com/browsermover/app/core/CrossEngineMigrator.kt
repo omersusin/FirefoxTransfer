@@ -120,8 +120,14 @@ class CrossEngineMigrator(private val context: Context) {
             }
 
             emit(onProgress, 0, "Cross-engine", "Stopping browsers...", 10)
+            // Browsers flush their live tab session and preferences from
+            // onStop(); a plain force-stop loses the newest tabs. Pause the
+            // source first, then stop it.
             RootHelper.exec(
-                "am force-stop ${BrowserPaths.q(sourcePkg)}; " +
+                "input keyevent 3 >/dev/null 2>&1 || true; " +
+                    "am start -a android.intent.action.MAIN -c android.intent.category.HOME " +
+                    ">/dev/null 2>&1 || true; sleep 3; " +
+                    "am force-stop ${BrowserPaths.q(sourcePkg)}; sleep 1; " +
                     "am force-stop ${BrowserPaths.q(targetPkg)}"
             )
 
