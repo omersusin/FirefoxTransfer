@@ -553,10 +553,13 @@ main() {
         for n in SyncAuthInfoCache.xml syncPrefs.xml syncEngines.xml sync.logins.prefs.xml mozac_feature_accounts_push.xml; do
             [ -f "$src_sp/$n" ] && safe_cp "$src_sp/$n" "$dst_sp/$n" "sync pref: $n"
         done
-        gecko_set_pref_bool "${dst_sp}/fenix_preferences.xml" "pref_key_fxa_signed_in" "true"
         if grep -q 'name="fxaState"' "$dst_sp/fxaAppState.xml" 2>/dev/null; then
+            gecko_set_pref_bool "${dst_sp}/fenix_preferences.xml" "pref_key_fxa_signed_in" "true"
             log_ok "Firefox Account state copied and signed-in flag synchronized"
         else
+            # Never claim signed-in without a state, or Fenix shows an empty
+            # account card until the next launch repairs it.
+            gecko_set_pref_bool "${dst_sp}/fenix_preferences.xml" "pref_key_fxa_signed_in" "false"
             log_warn "fxaAppState.xml was copied but has no fxaState value; sign in once in the target"
         fi
         log_info "Target account state was backed up in $BACKUP_DIR/target_shared_prefs"
@@ -578,6 +581,9 @@ main() {
     if [ -d "$dst_sp" ] && [ "$SRC" != "$DST" ]; then
         for f in "$dst_sp"/*.xml; do
             [ ! -f "$f" ] && continue
+            case "$(basename "$f")" in
+                fxaAppState.xml|fxaStateAC.xml|fxaStatePrefAC.xml) continue ;;
+            esac
             if grep -q "$SRC" "$f" 2>/dev/null; then
                 sed -i "s|${SRC}|${DST}|g" "$f" 2>/dev/null
             fi
