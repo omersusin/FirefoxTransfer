@@ -6,6 +6,7 @@
     <string name="brand">TARAYICI TAŞIYICI</string>
     <string name="home_title">Tarama hayatını taşı.</string>
     <string name="home_subtitle">Yer imleri, geçmiş, sekmeler, uzantılar ve Firefox Account — bulut eşitlemesi olmadan.</string>
+    <string name="hero_eyebrow">CİHAZDA · BULUTSUZ</string>
     <string name="access_title">Ayrıcalıklı erişim</string>
     <string name="access_checking">Ayrıcalıklı erişim denetleniyor…</string>
     <string name="access_ready">Root erişimi hazır</string>
@@ -42,7 +43,7 @@
     <string name="move_bookmarks">Yer imleri ve geçmiş</string>
     <string name="move_bookmarks_desc">Yerler, simgeler ve ziyaret verileri</string>
     <string name="move_site_data">Parolalar ve site verileri</string>
-    <string name="move_site_data_desc">Oturumlar, çerezler, formlar ve izinler</string>
+    <string name="move_site_data_desc">Çerezler, formlar ve izinler; parolalar kaynakta kalır</string>
     <string name="move_tabs">Açık sekmeler</string>
     <string name="move_tabs_desc">Kaynak sekme çubuğunu yeniden aç</string>
     <string name="move_extensions">Uzantılar</string>
@@ -94,7 +95,7 @@
     <string name="result_success">Taşıma tamamlandı</string>
     <string name="result_partial">Taşıma uyarılarla tamamlandı</string>
     <string name="result_failure">Taşıma başarısız</string>
-    <string name="result_success_desc">Verileriniz hedef tarayıcıda. Firefox veya Chrome profilini yeniden oluştursun diye bir kez açın.</string>
+    <string name="result_success_desc">Verileriniz hedef tarayıcıda. Profilini yeniden oluşturması için bir kez açın.</string>
     <string name="result_partial_desc">Ana veriler yazıldı ancak bazı öğeler ilgi bekliyor.</string>
     <string name="result_failure_desc">Hiçbir şey kaybolmadı. Ayrıntıları inceleyip yeniden deneyin.</string>
     <string name="result_details">Ayrıntılar</string>
@@ -103,6 +104,8 @@
     <string name="result_backup">Yedek: %1$s</string>
     <string name="result_log">Tam günlüğü görüntüle</string>
     <string name="result_extensions">Uzantıları görüntüle</string>
+    <string name="result_open_target">Hedef tarayıcıyı aç</string>
+    <string name="result_open_target_with">%1$s tarayıcısını aç</string>
     <string name="result_restore">Yedeği geri yükle</string>
     <string name="result_new">Yeni taşıma</string>
     <string name="result_open_report">Uzantı raporunu aç</string>

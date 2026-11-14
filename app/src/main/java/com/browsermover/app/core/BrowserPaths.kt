@@ -232,6 +232,26 @@ object BrowserPaths {
         return geckoProfile(pkg)
     }
 
+    /**
+     * Cookie databases are created lazily. Chromium moved them from
+     * `Default/Cookies` to `Default/Network/Cookies`; both layouts are still
+     * found in the wild on Android forks.
+     */
+    suspend fun chromiumCookies(profile: ChromiumProfile): String? = when {
+        exists(profile.networkCookies) -> profile.networkCookies
+        exists(profile.legacyCookies) -> profile.legacyCookies
+        else -> null
+    }
+
+    /** Gecko keeps cookies either in files/ (Fenix) or in the profile. */
+    suspend fun geckoCookies(profile: GeckoProfile): String? {
+        val candidates = listOf(
+            "${profile.filesDir}/cookies.sqlite",
+            profile.profileDir?.let { "$it/cookies.sqlite" }
+        ).filterNotNull()
+        return candidates.firstOrNull { exists(it) }
+    }
+
     suspend fun startAndStop(pkg: String): Boolean {
         val r = RootHelper.execMultiple(listOf(
             "am force-stop ${q(pkg)}",

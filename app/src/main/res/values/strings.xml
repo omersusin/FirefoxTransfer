@@ -6,6 +6,7 @@
     <string name="brand">BROWSER MIGRATOR</string>
     <string name="home_title">Move your browsing life.</string>
     <string name="home_subtitle">Bookmarks, history, tabs, extensions and your Firefox Account — without cloud sync.</string>
+    <string name="hero_eyebrow">ON-DEVICE · NO CLOUD</string>
     <string name="access_title">Privileged access</string>
     <string name="access_checking">Checking privileged access…</string>
     <string name="access_ready">Root access ready</string>
@@ -42,7 +43,7 @@
     <string name="move_bookmarks">Bookmarks &amp; history</string>
     <string name="move_bookmarks_desc">Places, favicons and visit data</string>
     <string name="move_site_data">Passwords &amp; site data</string>
-    <string name="move_site_data_desc">Logins, cookies, forms and permissions</string>
+    <string name="move_site_data_desc">Cookies, forms and permissions; passwords stay in the source</string>
     <string name="move_tabs">Open tabs</string>
     <string name="move_tabs_desc">Reopen the source tab tray</string>
     <string name="move_extensions">Extensions</string>
@@ -94,7 +95,7 @@
     <string name="result_success">Migration complete</string>
     <string name="result_partial">Migration finished with warnings</string>
     <string name="result_failure">Migration failed</string>
-    <string name="result_success_desc">Your data is in the target browser. Open it once to let Firefox or Chrome rebuild its profile.</string>
+    <string name="result_success_desc">Your data is in the target browser. Open it once so it can rebuild its profile.</string>
     <string name="result_partial_desc">The main data was written, but some items need attention.</string>
     <string name="result_failure_desc">Nothing was lost. Review the details and try again.</string>
     <string name="result_details">Details</string>
@@ -103,6 +104,8 @@
     <string name="result_backup">Backup: %1$s</string>
     <string name="result_log">View full log</string>
     <string name="result_extensions">View extensions</string>
+    <string name="result_open_target">Open target browser</string>
+    <string name="result_open_target_with">Open %1$s</string>
     <string name="result_restore">Restore backup</string>
     <string name="result_new">New migration</string>
     <string name="result_open_report">Open extension report</string>

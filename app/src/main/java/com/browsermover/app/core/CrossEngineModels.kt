@@ -33,3 +33,30 @@ internal data class ChromiumData(
     val places: List<SourcePlace>,
     val bookmarks: List<SourceBookmark>
 )
+
+/**
+ * A cookie read from either engine. Expiry is Unix seconds (0 = session
+ * cookie). SameSite uses the Gecko encoding internally: 0 = none/unset,
+ * 1 = lax, 2 = strict.
+ */
+internal data class SourceCookie(
+    val host: String,
+    val name: String,
+    val value: String,
+    val path: String,
+    val expiryEpochSeconds: Long,
+    val secure: Boolean,
+    val httpOnly: Boolean,
+    val sameSite: Int
+)
+
+internal data class CookieReadResult(
+    val cookies: List<SourceCookie>,
+    val encryptedSkipped: Int = 0
+)
+
+internal data class CookieImportResult(
+    val imported: Int,
+    val skipped: Int,
+    val message: String
+)

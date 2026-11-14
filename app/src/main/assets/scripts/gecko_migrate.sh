@@ -1,6 +1,6 @@
 #!/system/bin/sh
 # ============================================================
-#  gecko_migrate.sh v7
+#  gecko_migrate.sh v8
 #  Fenix fix: DBs and tabs under files/
 # ============================================================
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
@@ -67,6 +67,27 @@ gecko_dst_path() {
         return 0
     fi
     echo "${G_DST_PROFILE}/${name}"
+}
+
+# Fenix stores its own settings in fenix_preferences.xml. Keep the account
+# flag in sync with the account state we actually wrote, otherwise the account
+# card can say "signed out" while the encrypted/plain state is present.
+gecko_set_pref_bool() {
+    local file="$1" key="$2" value="$3"
+    [ -f "$file" ] || return 1
+    if grep -q "name=\"${key}\"" "$file" 2>/dev/null; then
+        sed -i -E "s#(<boolean name=\"${key}\" value=\")[^\"]*(\" ?/>)#\\1${value}\\2#g" \
+            "$file" 2>/dev/null || true
+    else
+        sed -i "s#</map>#    <boolean name=\"${key}\" value=\"${value}\" />\n</map>#" \
+            "$file" 2>/dev/null || true
+    fi
+}
+
+gecko_pref_has_true() {
+    local file="$1" key="$2"
+    [ -f "$file" ] || return 1
+    grep -Eq "<boolean name=\"${key}\" value=\"true\" ?/>" "$file" 2>/dev/null
 }
 
 # ============================================================
@@ -212,7 +233,7 @@ main() {
     log_init
 
     log_info "============================================"
-    log_info "  Gecko Migration v7 (Fenix compatible)"
+    log_info "  Gecko Migration v8 (Fenix compatible)"
     log_info "  Source: $SRC"
     log_info "  Target: $DST"
     log_info "  Options: account=$MIGRATE_ACCOUNT extensions=$MIGRATE_EXTENSIONS tabs=$MIGRATE_TABS"
@@ -223,11 +244,14 @@ main() {
     check_package "$SRC" || exit 1
     check_package "$DST" || exit 1
 
-    stop_pkg "$SRC"
     stop_pkg "$DST"
 
     # ==== PHASE 0: Discovery ====
     log_info "PHASE 0: DISCOVERY"
+
+    # Fenix writes its live tab session from onStop(). Do this before reading
+    # the source profile so tabs opened in the last autosave interval are kept.
+    graceful_stop_pkg "$SRC"
 
     find_gecko_profile "$SRC"
     local src_profile="$G_PROFILE"
@@ -345,12 +369,19 @@ main() {
         log_warn "Open-tab session JSON skipped for legacy Gecko target"
     else
         local src_session="${src_files}/mozilla_components_session_storage_gecko.json"
+        [ -f "$src_session" ] || src_session="${src_profile}/mozilla_components_session_storage_gecko.json"
+        local dst_session="${dst_files}/mozilla_components_session_storage_gecko.json"
+        rm -f "${dst_session}" "${dst_session}.bak" 2>/dev/null
         if [ -f "$src_session" ]; then
-            local dst_session="${dst_files}/mozilla_components_session_storage_gecko.json"
             safe_cp "$src_session" "$dst_session" "open-tab session storage"
             if [ -f "$dst_session" ]; then
-                sed -i "s|${src_dd}|${dst_dd}|g; s|${src_profile}|${dst_profile}|g; s|${SRC}|${DST}|g"                     "$dst_session" 2>/dev/null || true
-                log_ok "Open-tab session paths patched"
+                sed -i "s|${src_dd}|${dst_dd}|g; s|${src_profile}|${dst_profile}|g" \
+                    "$dst_session" 2>/dev/null || true
+                if grep -q "sessionStateTuples" "$dst_session" 2>/dev/null; then
+                    log_ok "Open-tab session installed and validated"
+                else
+                    log_warn "Open-tab session file has no sessionStateTuples; target may start with no tabs"
+                fi
             fi
         else
             log_info "Open-tab session storage not present in source"
@@ -358,7 +389,8 @@ main() {
 
         # Fallback for builds that still use a jsonlz4 sessionstore.
         if [ -f "${src_profile}/sessionstore.jsonlz4" ]; then
-            safe_cp "${src_profile}/sessionstore.jsonlz4"                     "${dst_profile}/sessionstore.jsonlz4" "sessionstore.jsonlz4"
+            safe_cp "${src_profile}/sessionstore.jsonlz4" \
+                "${dst_profile}/sessionstore.jsonlz4" "sessionstore.jsonlz4"
         fi
     fi
     else
@@ -458,6 +490,14 @@ main() {
 
     local src_sp="${src_dd}/shared_prefs"
     local dst_sp="${dst_dd}/shared_prefs"
+    local account_transferable=0
+    if [ "$MIGRATE_ACCOUNT" = "1" ] && [ -f "$src_sp/fxaAppState.xml" ]; then
+        case "$SRC" in
+            *nightly*|*debug*) account_transferable=0 ;;
+            *) account_transferable=1 ;;
+        esac
+    fi
+
     if [ -d "$src_sp" ]; then
         mkdir -p "$dst_sp" 2>/dev/null
         for f in "$src_sp"/*; do
@@ -468,6 +508,25 @@ main() {
             # Keystore-bound and must never be transplanted.
             case "$fname" in
                 Fxa*|fxa*|SyncAuthInfoCache.xml|syncPrefs.xml|syncEngines.xml|sync.logins.prefs.xml|mozac_feature_accounts_push.xml|*Crypto.xml)
+                    continue
+                    ;;
+                "fenix_preferences.xml")
+                    # Fenix keeps pref_key_fxa_signed_in here. Copy it only
+                    # when we are also copying a usable account state, so the
+                    # target can never claim to be signed in without a state.
+                    if [ "$account_transferable" = "1" ]; then
+                        safe_cp "$f" "${dst_sp}/${fname}" "shared_pref: $fname"
+                    else
+                        log_info "Keeping target Fenix settings (no transferable account state)"
+                    fi
+                    continue
+                    ;;
+                "${SRC}_preferences.xml")
+                    # Older Firefox builds name the settings file after the
+                    # package. Rename it, otherwise the target never reads it.
+                    if [ "$account_transferable" = "1" ]; then
+                        safe_cp "$f" "${dst_sp}/${DST}_preferences.xml" "settings (renamed)"
+                    fi
                     continue
                     ;;
                 "${DST}_preferences.xml")
@@ -482,39 +541,30 @@ main() {
 
     if [ "$MIGRATE_ACCOUNT" != "1" ]; then
         log_info "Firefox Account copy disabled; target account state preserved"
-    elif [ -f "$src_sp/fxaStateAC.xml" ] || [ -f "$src_sp/fxaStatePrefAC.xml" ]; then
-        # Firefox Nightly/debug uses SecureAbove22Preferences and a key that is
-        # bound to the source app UID. Copying it produces an undecryptable
-        # account and can leave the target stuck on the account screen.
-        case "$SRC" in
-            *nightly*|*debug*)
-                log_warn "Firefox Account uses Keystore-protected Nightly/debug storage; account state was not copied. Sign in once in the target."
-                ;;
-            *)
-                # Release/beta can have an old secure file left behind. Their
-                # live account state is the plain-text fxaAppState.xml.
-                if [ -f "$src_sp/fxaAppState.xml" ]; then
-                    safe_cp "$src_sp/fxaAppState.xml" "$dst_sp/fxaAppState.xml" "Firefox Account state (release/beta)"
-                    for n in SyncAuthInfoCache.xml syncPrefs.xml syncEngines.xml sync.logins.prefs.xml mozac_feature_accounts_push.xml; do
-                        [ -f "$src_sp/$n" ] && safe_cp "$src_sp/$n" "$dst_sp/$n" "sync pref: $n"
-                    done
-                    log_ok "Firefox Account state copied; the target should stay signed in"
-                    log_info "Target account state was backed up in $BACKUP_DIR/target_shared_prefs"
-                else
-                    log_warn "Firefox Account uses Keystore-protected storage; account state was not copied. Sign in once in the target."
-                fi
-                ;;
-        esac
-    elif [ -f "$src_sp/fxaAppState.xml" ]; then
+    elif [ "$account_transferable" = "1" ]; then
         # Firefox release/beta use the plain-text shared preference store:
         # fxaAppState.xml contains the serialized FxA state under "fxaState".
-        # This is the path that has always worked for release/beta migrations.
+        #
+        # Remove any leftover secure store from the target. SharedPrefAccountStorage
+        # migrates from SecureAbove22Preferences on startup and would otherwise
+        # overwrite the state we just copied with the target's old account.
+        rm -f "${dst_sp}/fxaStateAC.xml" "${dst_sp}/fxaStatePrefAC.xml" 2>/dev/null
         safe_cp "$src_sp/fxaAppState.xml" "$dst_sp/fxaAppState.xml" "Firefox Account state (release/beta)"
         for n in SyncAuthInfoCache.xml syncPrefs.xml syncEngines.xml sync.logins.prefs.xml mozac_feature_accounts_push.xml; do
             [ -f "$src_sp/$n" ] && safe_cp "$src_sp/$n" "$dst_sp/$n" "sync pref: $n"
         done
-        log_ok "Firefox Account state copied; the target should stay signed in"
+        gecko_set_pref_bool "${dst_sp}/fenix_preferences.xml" "pref_key_fxa_signed_in" "true"
+        if grep -q 'name="fxaState"' "$dst_sp/fxaAppState.xml" 2>/dev/null; then
+            log_ok "Firefox Account state copied and signed-in flag synchronized"
+        else
+            log_warn "fxaAppState.xml was copied but has no fxaState value; sign in once in the target"
+        fi
         log_info "Target account state was backed up in $BACKUP_DIR/target_shared_prefs"
+    elif [ -f "$src_sp/fxaStateAC.xml" ] || [ -f "$src_sp/fxaStatePrefAC.xml" ]; then
+        # Firefox Nightly/debug uses SecureAbove22Preferences and a key that is
+        # bound to the source app UID. Copying it produces an undecryptable
+        # account and can leave the target stuck on the account screen.
+        log_warn "Firefox Account uses Keystore-protected Nightly/debug storage; account state was not copied. Sign in once in the target."
     else
         log_info "No Firefox Account state found in source; target account preserved"
     fi
@@ -549,7 +599,7 @@ main() {
     fi
 
     stop_pkg "$DST"
-    log_ok "GECKO MIGRATION COMPLETED! (v7)"
+    log_ok "GECKO MIGRATION COMPLETED! (v8)"
 }
 
 if [ -z "$SRC" ] || [ -z "$DST" ]; then

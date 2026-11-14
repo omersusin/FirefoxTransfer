@@ -137,8 +137,9 @@ class CrossEngineMigrator(private val context: Context) {
 
             cacheRoot.mkdirs()
             warnings.add(
-                "Passwords, cookies, and extension binaries/data are browser-specific " +
-                    "and were not converted."
+                "Passwords and extension binaries are not converted. Website cookies are " +
+                    "merged into the target so existing sessions stay signed in; Chrome's own " +
+                    "Google account is managed by Android and is never copied."
             )
 
             val result = when {
@@ -702,6 +703,8 @@ class CrossEngineMigrator(private val context: Context) {
             return ConversionResult(false, "Could not write the target places.sqlite")
         }
 
+        transferCookiesToGecko(source, target, warnings)
+
         return ConversionResult(true, imported.message, warnings)
     }
 
@@ -759,11 +762,131 @@ class CrossEngineMigrator(private val context: Context) {
                 "${BrowserPaths.q(target.bookmarks + ".tmp")}"
         )
 
+        transferCookiesToChromium(source, target, warnings)
+
         return ConversionResult(
             true,
             "${imported.message} ${data.bookmarks.size} bookmarks were merged into Chrome.",
             warnings
         )
+    }
+
+    // ------------------------------------------------------------------
+    //  Site sessions / cookies
+    // ------------------------------------------------------------------
+
+    private suspend fun transferCookiesToGecko(
+        source: ChromiumProfile,
+        target: GeckoProfile,
+        warnings: MutableList<String>
+    ) {
+        try {
+            val sourcePath = BrowserPaths.chromiumCookies(source)
+            val targetPath = BrowserPaths.geckoCookies(target)
+            if (sourcePath == null) {
+                warnings.add(
+                    "Chrome has no cookie database yet; website sessions could not be imported."
+                )
+                return
+            }
+            if (targetPath == null) {
+                warnings.add(
+                    "Firefox has no cookie database yet; open it once, then migrate again for website sessions."
+                )
+                return
+            }
+            val sourceCopy = exportToCache(sourcePath, "chrome_cookies.db") ?: run {
+                warnings.add("Could not read Chrome cookies; website sessions were not imported.")
+                return
+            }
+            val targetCopy = exportToCache(targetPath, "gecko_cookies.db") ?: run {
+                warnings.add("Could not read Firefox cookies; website sessions were not imported.")
+                return
+            }
+            val read = try {
+                CrossEngineConverter.readChromiumCookies(sourceCopy)
+            } catch (e: Exception) {
+                warnings.add("Chrome cookie read failed: ${e.message}")
+                return
+            }
+            if (read.cookies.isEmpty()) {
+                warnings.add("Chrome returned no readable cookies; website sessions were not imported.")
+                return
+            }
+            val result = CrossEngineConverter.importCookiesIntoGecko(targetCopy, read.cookies)
+            if (result.imported == 0) {
+                warnings.add(result.message)
+                return
+            }
+            val targetPkg = target.dataDir.substringAfterLast('/')
+            if (!writeToTarget(targetCopy, targetPath, targetPkg)) {
+                warnings.add("Could not write Firefox cookies; website sessions were not imported.")
+                return
+            }
+            warnings.add(result.message)
+            if (read.encryptedSkipped > 0) {
+                warnings.add(
+                    "${read.encryptedSkipped} encrypted Chrome cookie(s) were skipped; " +
+                        "those sites may ask you to sign in again."
+                )
+            }
+        } catch (e: Exception) {
+            warnings.add("Cookie transfer failed: ${e.message}")
+        }
+    }
+
+    private suspend fun transferCookiesToChromium(
+        source: GeckoProfile,
+        target: ChromiumProfile,
+        warnings: MutableList<String>
+    ) {
+        try {
+            val sourcePath = BrowserPaths.geckoCookies(source)
+            val targetPath = BrowserPaths.chromiumCookies(target)
+            if (sourcePath == null) {
+                warnings.add(
+                    "Firefox has no cookie database; website sessions could not be imported."
+                )
+                return
+            }
+            if (targetPath == null) {
+                warnings.add(
+                    "Chrome has no cookie database yet; open it once, then migrate again for website sessions."
+                )
+                return
+            }
+            val sourceCopy = exportToCache(sourcePath, "gecko_cookies.db") ?: run {
+                warnings.add("Could not read Firefox cookies; website sessions were not imported.")
+                return
+            }
+            val targetCopy = exportToCache(targetPath, "chrome_cookies.db") ?: run {
+                warnings.add("Could not read Chrome cookies; website sessions were not imported.")
+                return
+            }
+            val read = try {
+                CrossEngineConverter.readGeckoCookies(sourceCopy)
+            } catch (e: Exception) {
+                warnings.add("Firefox cookie read failed: ${e.message}")
+                return
+            }
+            if (read.cookies.isEmpty()) {
+                warnings.add("Firefox returned no cookies; website sessions were not imported.")
+                return
+            }
+            val result = CrossEngineConverter.importCookiesIntoChromium(targetCopy, read.cookies)
+            if (result.imported == 0) {
+                warnings.add(result.message)
+                return
+            }
+            val targetPkg = target.dataDir.substringAfterLast('/')
+            if (!writeToTarget(targetCopy, targetPath, targetPkg)) {
+                warnings.add("Could not write Chrome cookies; website sessions were not imported.")
+                return
+            }
+            warnings.add(result.message)
+        } catch (e: Exception) {
+            warnings.add("Cookie transfer failed: ${e.message}")
+        }
     }
 
     // ------------------------------------------------------------------

@@ -170,6 +170,9 @@ class DataMover(private val context: Context) {
                 kotlinPatchChromium(sourcePkg, targetPkg).forEach { if (!it.success) warnings.add(it.message) }
             } else if (engine == BrowserType.GECKO) {
                 kotlinPatchGecko(sourcePkg, targetPkg).forEach { if (!it.success) warnings.add(it.message) }
+                if (options.copyFirefoxAccount) {
+                    verifyFirefoxAccount(sourcePkg, targetPkg)?.let { warnings.add(it) }
+                }
             }
 
             buildResult(exitCode, errors, warnings, logLines)
@@ -256,11 +259,34 @@ class DataMover(private val context: Context) {
                     dst.preferences, srcPkg, dstPkg, dstBaseName, dstBaseName
                 )
                 if (!result.success) results.add(result)
+                val sanitized = jsonPatcher.sanitizeChromiumAccountState(dst.preferences)
+                if (!sanitized.success) results.add(sanitized)
             }
         } else {
             results.add(JsonPatcher.PatchResult(false, "Could not locate Chromium profile for $dstPkg"))
         }
         return results
+    }
+
+    /**
+     * The migration script copies the account store, but a stale secure-store
+     * file or an interrupted write can still leave the target with no usable
+     * account. Surface that instead of showing a green result the user has to
+     * discover the problem by opening Firefox.
+     */
+    private suspend fun verifyFirefoxAccount(srcPkg: String, dstPkg: String): String? {
+        val target = FirefoxAccountInspector.inspect(dstPkg)
+        val source = FirefoxAccountInspector.inspect(srcPkg)
+        if (!source.found || source.secureOnly) return null
+        return when {
+            target.found && !target.secureOnly -> null
+            target.secureOnly ->
+                "Firefox Account: the target still has a secure-store file. " +
+                    "Open Firefox, sign out/in once if the account screen is blank."
+            else ->
+                "Firefox Account: the copied state is missing in the target. " +
+                    "Open Firefox once; if it shows signed out, sign in (the rest of the data is intact)."
+        }
     }
 
     private suspend fun kotlinPatchGecko(srcPkg: String, dstPkg: String): List<JsonPatcher.PatchResult> {

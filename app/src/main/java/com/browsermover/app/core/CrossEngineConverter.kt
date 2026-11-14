@@ -833,6 +833,288 @@ internal object CrossEngineConverter {
     // ------------------------------------------------------------------
     //  Small helpers
     // ------------------------------------------------------------------
+    //  Cookies
+    // ------------------------------------------------------------------
+
+    fun readChromiumCookies(path: String): CookieReadResult {
+        val db = SQLiteDatabase.openDatabase(
+            path, null,
+            SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS
+        )
+        try {
+            val cols = columns(db, "cookies")
+            if ("host_key" !in cols || "name" !in cols) {
+                return CookieReadResult(emptyList())
+            }
+            val cookies = mutableListOf<SourceCookie>()
+            var encrypted = 0
+            db.rawQuery("SELECT * FROM cookies", null).use { c ->
+                val hostIdx = c.getColumnIndex("host_key")
+                val nameIdx = c.getColumnIndex("name")
+                val valueIdx = c.getColumnIndex("value")
+                val encIdx = c.getColumnIndex("encrypted_value")
+                val pathIdx = c.getColumnIndex("path")
+                val expIdx = c.getColumnIndex("expires_utc")
+                val secureIdx = c.getColumnIndex("is_secure")
+                val httpIdx = c.getColumnIndex("is_httponly")
+                val sameIdx = c.getColumnIndex("samesite")
+                while (c.moveToNext()) {
+                    val host = if (hostIdx >= 0) c.getString(hostIdx) else null
+                    val name = if (nameIdx >= 0) c.getString(nameIdx) else null
+                    if (host.isNullOrBlank() || name.isNullOrBlank()) continue
+                    val plain = if (valueIdx >= 0) c.getString(valueIdx) else null
+                    val enc = if (encIdx >= 0 && !c.isNull(encIdx)) c.getBlob(encIdx) else null
+                    if (plain.isNullOrEmpty() && enc != null && enc.isNotEmpty()) {
+                        // Android Chromium normally ships without an OSCrypt
+                        // delegate, so this is rare. Never import ciphertext;
+                        // it would be unreadable inside the other engine.
+                        encrypted++
+                        continue
+                    }
+                    val expiry = if (expIdx >= 0) c.getLong(expIdx) else 0L
+                    cookies.add(
+                        SourceCookie(
+                            host = host,
+                            name = name,
+                            value = plain.orEmpty(),
+                            path = if (pathIdx >= 0) c.getString(pathIdx) ?: "/" else "/",
+                            expiryEpochSeconds = chromeCookieExpiryToUnix(expiry),
+                            secure = secureIdx >= 0 && c.getInt(secureIdx) != 0,
+                            httpOnly = httpIdx >= 0 && c.getInt(httpIdx) != 0,
+                            sameSite = chromeSameSiteToGecko(
+                                if (sameIdx >= 0) c.getInt(sameIdx) else 0
+                            )
+                        )
+                    )
+                }
+            }
+            return CookieReadResult(cookies, encrypted)
+        } finally {
+            db.close()
+        }
+    }
+
+    fun readGeckoCookies(path: String): CookieReadResult {
+        val db = SQLiteDatabase.openDatabase(
+            path, null, SQLiteDatabase.OPEN_READONLY
+        )
+        try {
+            val cols = columns(db, "moz_cookies")
+            if ("host" !in cols || "name" !in cols) {
+                return CookieReadResult(emptyList())
+            }
+            val cookies = mutableListOf<SourceCookie>()
+            db.rawQuery("SELECT * FROM moz_cookies", null).use { c ->
+                val hostIdx = c.getColumnIndex("host")
+                val nameIdx = c.getColumnIndex("name")
+                val valueIdx = c.getColumnIndex("value")
+                val pathIdx = c.getColumnIndex("path")
+                val expIdx = c.getColumnIndex("expiry")
+                val secureIdx = c.getColumnIndex("isSecure")
+                val httpIdx = c.getColumnIndex("isHttpOnly")
+                val sameIdx = c.getColumnIndex("sameSite")
+                while (c.moveToNext()) {
+                    val host = if (hostIdx >= 0) c.getString(hostIdx) else null
+                    val name = if (nameIdx >= 0) c.getString(nameIdx) else null
+                    if (host.isNullOrBlank() || name.isNullOrBlank()) continue
+                    cookies.add(
+                        SourceCookie(
+                            host = host,
+                            name = name,
+                            value = if (valueIdx >= 0) c.getString(valueIdx).orEmpty() else "",
+                            path = if (pathIdx >= 0) c.getString(pathIdx) ?: "/" else "/",
+                            expiryEpochSeconds = if (expIdx >= 0) c.getLong(expIdx) else 0L,
+                            secure = secureIdx >= 0 && c.getInt(secureIdx) != 0,
+                            httpOnly = httpIdx >= 0 && c.getInt(httpIdx) != 0,
+                            sameSite = if (sameIdx >= 0) c.getInt(sameIdx) else 0
+                        )
+                    )
+                }
+            }
+            return CookieReadResult(cookies)
+        } finally {
+            db.close()
+        }
+    }
+
+    fun importCookiesIntoGecko(
+        cookiesPath: String,
+        cookies: List<SourceCookie>
+    ): CookieImportResult {
+        val db = try {
+            SQLiteDatabase.openDatabase(cookiesPath, null, SQLiteDatabase.OPEN_READWRITE)
+        } catch (e: Exception) {
+            return CookieImportResult(0, cookies.size,
+                "Could not open the Firefox cookie database: ${e.message}")
+        }
+        try {
+            val cols = columns(db, "moz_cookies")
+            if ("host" !in cols || "name" !in cols || "value" !in cols) {
+                return CookieImportResult(0, cookies.size,
+                    "Target is not a Firefox cookie database.")
+            }
+            val nowMicros = System.currentTimeMillis() * 1000
+            val nowSeconds = System.currentTimeMillis() / 1000
+            var imported = 0
+            var skipped = 0
+            db.beginTransaction()
+            try {
+                for (cookie in cookies) {
+                    if (!isUsableCookie(cookie, nowSeconds)) {
+                        skipped++
+                        continue
+                    }
+                    try {
+                        db.delete(
+                            "moz_cookies",
+                            "host=? AND name=? AND path=?",
+                            arrayOf(cookie.host, cookie.name, cookie.path)
+                        )
+                        val values = ContentValues()
+                        values.put("host", cookie.host)
+                        values.put("name", cookie.name)
+                        values.put("value", cookie.value)
+                        values.put("path", cookie.path)
+                        values.put("expiry", cookie.expiryEpochSeconds)
+                        values.put("isSecure", if (cookie.secure) 1 else 0)
+                        values.put("isHttpOnly", if (cookie.httpOnly) 1 else 0)
+                        values.put("sameSite", cookie.sameSite)
+                        values.put("creationTime", nowMicros)
+                        values.put("lastAccessed", nowMicros)
+                        values.put("originAttributes", "")
+                        if ("schemeMap" in cols) values.put("schemeMap", 0)
+                        if ("rawSameSite" in cols) values.put("rawSameSite", cookie.sameSite)
+                        if ("isPartitioned" in cols) values.put("isPartitioned", 0)
+                        fillRequired(db, "moz_cookies", values)
+                        db.insertOrThrow("moz_cookies", null, values)
+                        imported++
+                    } catch (_: Exception) {
+                        skipped++
+                    }
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+            return CookieImportResult(
+                imported, skipped,
+                "Imported $imported cookie(s) into Firefox" +
+                    if (skipped > 0) " ($skipped skipped)." else "."
+            )
+        } finally {
+            db.close()
+        }
+    }
+
+    fun importCookiesIntoChromium(
+        cookiesPath: String,
+        cookies: List<SourceCookie>
+    ): CookieImportResult {
+        val db = try {
+            SQLiteDatabase.openDatabase(
+                cookiesPath, null,
+                SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.NO_LOCALIZED_COLLATORS
+            )
+        } catch (e: Exception) {
+            return CookieImportResult(0, cookies.size,
+                "Could not open the Chrome cookie database: ${e.message}")
+        }
+        try {
+            val cols = columns(db, "cookies")
+            if ("host_key" !in cols || "name" !in cols || "value" !in cols) {
+                return CookieImportResult(0, cookies.size,
+                    "Target is not a Chromium cookie database.")
+            }
+            val nowChrome = System.currentTimeMillis() * 1000 + CHROME_EPOCH_OFFSET
+            val nowSeconds = System.currentTimeMillis() / 1000
+            var imported = 0
+            var skipped = 0
+            db.beginTransaction()
+            try {
+                for (cookie in cookies) {
+                    if (!isUsableCookie(cookie, nowSeconds)) {
+                        skipped++
+                        continue
+                    }
+                    try {
+                        db.delete(
+                            "cookies",
+                            "host_key=? AND name=? AND path=?",
+                            arrayOf(cookie.host, cookie.name, cookie.path)
+                        )
+                        val values = ContentValues()
+                        values.put("host_key", cookie.host)
+                        values.put("name", cookie.name)
+                        // Android Chromium has no cookie crypto delegate, so a
+                        // plaintext value with an empty encrypted_value is read
+                        // back normally. Never copy ciphertext across engines.
+                        values.put("value", cookie.value)
+                        values.put("encrypted_value", ByteArray(0))
+                        values.put("path", cookie.path)
+                        val persistent = cookie.expiryEpochSeconds > 0
+                        values.put(
+                            "expires_utc",
+                            if (persistent) cookie.expiryEpochSeconds * 1_000_000 + CHROME_EPOCH_OFFSET else 0L
+                        )
+                        values.put("is_secure", if (cookie.secure) 1 else 0)
+                        values.put("is_httponly", if (cookie.httpOnly) 1 else 0)
+                        values.put("creation_utc", nowChrome)
+                        values.put("last_access_utc", nowChrome)
+                        values.put("last_update_utc", nowChrome)
+                        values.put("has_expires", if (persistent) 1 else 0)
+                        values.put("is_persistent", if (persistent) 1 else 0)
+                        values.put("priority", 1)
+                        values.put("samesite", geckoSameSiteToChrome(cookie.sameSite))
+                        values.put("source_scheme", if (cookie.secure) 2 else 1)
+                        values.put("source_port", -1)
+                        if ("top_frame_site_key" in cols) values.put("top_frame_site_key", "")
+                        if ("has_cross_site_ancestor" in cols) values.put("has_cross_site_ancestor", 0)
+                        fillRequired(db, "cookies", values)
+                        db.insertOrThrow("cookies", null, values)
+                        imported++
+                    } catch (_: Exception) {
+                        skipped++
+                    }
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+            return CookieImportResult(
+                imported, skipped,
+                "Imported $imported cookie(s) into Chrome" +
+                    if (skipped > 0) " ($skipped skipped)." else "."
+            )
+        } finally {
+            db.close()
+        }
+    }
+
+    private fun isUsableCookie(cookie: SourceCookie, nowSeconds: Long): Boolean {
+        if (cookie.host.isBlank() || cookie.name.isBlank()) return false
+        if (cookie.host.any { it.isWhitespace() }) return false
+        if (cookie.path.isBlank()) return false
+        return cookie.expiryEpochSeconds <= 0 || cookie.expiryEpochSeconds > nowSeconds
+    }
+
+    private fun chromeCookieExpiryToUnix(value: Long): Long =
+        if (value > 0) (value - CHROME_EPOCH_OFFSET) / 1_000_000 else 0L
+
+    private fun chromeSameSiteToGecko(value: Int): Int = when (value) {
+        1 -> 0 // no_restriction
+        2 -> 1 // lax
+        3 -> 2 // strict
+        else -> 0
+    }
+
+    private fun geckoSameSiteToChrome(value: Int): Int = when (value) {
+        0 -> 1 // no_restriction
+        1 -> 2 // lax
+        2 -> 3 // strict
+        else -> 0
+    }
+
+    // ------------------------------------------------------------------
 
     private fun columns(db: SQLiteDatabase, table: String): Set<String> {
         val result = mutableSetOf<String>()

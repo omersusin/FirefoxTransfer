@@ -167,14 +167,5 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:gravity="center"
-            android:text="@string/do_not_close"
-            android:textAppearance="@style/TextAppearance.BrowserMigrator.Body"
-            android:textSize="11sp" />
-
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

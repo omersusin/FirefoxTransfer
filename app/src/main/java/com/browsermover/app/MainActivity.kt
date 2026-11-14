@@ -193,6 +193,7 @@ class MainActivity : AppCompatActivity() {
         b.screenProgress.btnToggleLog.setOnClickListener { toggleLog() }
 
         b.screenResult.btnViewExtensions.setOnClickListener { openExtensions() }
+        b.screenResult.btnOpenTarget.setOnClickListener { openTargetBrowser() }
         b.screenResult.btnResultLog.setOnClickListener { showLogDialog() }
         b.screenResult.btnRestore.setOnClickListener { showRestoreDialog() }
         b.screenResult.btnNewMigration.setOnClickListener { showHome() }
@@ -270,6 +271,7 @@ class MainActivity : AppCompatActivity() {
         b.screenHome.btnReview.alpha = if (validPair) 1f else 0.5f
         updateStartButton()
         updateRoute()
+        updateReviewRoute()
 
         val geckoPair = sourceBrowser?.type == BrowserType.GECKO &&
             targetBrowser?.type == BrowserType.GECKO
@@ -302,6 +304,37 @@ class MainActivity : AppCompatActivity() {
         val enabled = validPair && preflightReady && !isMigrating
         b.screenReview.btnStart.isEnabled = enabled
         b.screenReview.btnStart.alpha = if (enabled) 1f else 0.55f
+    }
+
+    private fun updateReviewRoute() {
+        val source = sourceBrowser
+        val target = targetBrowser
+        val route = b.screenReview.txtReviewRoute
+        val desc = b.screenReview.txtReviewRouteDesc
+        when {
+            source == null || target == null -> {
+                route.text = getString(R.string.route_pick_both)
+                desc.text = getString(R.string.review_subtitle)
+            }
+            source.packageName == target.packageName -> {
+                route.text = getString(R.string.same_browser)
+                desc.text = getString(R.string.route_pick_both)
+            }
+            source.type == target.type -> {
+                route.text = getString(R.string.route_same)
+                desc.text = getString(
+                    R.string.route_summary, source.label, target.label
+                )
+            }
+            else -> {
+                route.text = getString(R.string.route_cross)
+                desc.text = getString(
+                    R.string.route_summary,
+                    engineLabel(source.type),
+                    engineLabel(target.type)
+                )
+            }
+        }
     }
 
     private fun renderBrowserCard(browser: InstalledBrowser?, isSource: Boolean) {
@@ -877,6 +910,12 @@ class MainActivity : AppCompatActivity() {
 
         b.screenResult.btnViewExtensions.isEnabled = true
         b.screenResult.btnRestore.isEnabled = true
+        b.screenResult.btnOpenTarget.text = if (target != null) {
+            getString(R.string.result_open_target_with, target.label)
+        } else {
+            getString(R.string.result_open_target)
+        }
+        b.screenResult.btnOpenTarget.isEnabled = target != null
         updateResultExtensionButtons()
         showScreen(SCREEN_RESULT)
     }
@@ -1074,6 +1113,24 @@ class MainActivity : AppCompatActivity() {
     private fun openUrl(url: String) {
         try {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (_: Exception) {
+            toast(getString(R.string.not_available))
+        }
+    }
+
+    private fun openTargetBrowser() {
+        val target = migratedTarget ?: targetBrowser
+        if (target == null) {
+            toast(getString(R.string.error_select_both))
+            return
+        }
+        val intent = packageManager.getLaunchIntentForPackage(target.packageName)
+        if (intent == null) {
+            toast(getString(R.string.not_available))
+            return
+        }
+        try {
+            startActivity(intent)
         } catch (_: Exception) {
             toast(getString(R.string.not_available))
         }

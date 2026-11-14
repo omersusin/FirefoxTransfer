@@ -193,11 +193,14 @@ main() {
     check_package "$SRC" || exit 1
     check_package "$DST" || exit 1
 
-    stop_pkg "$SRC"
     stop_pkg "$DST"
 
     # ---- PHASE 0 ----
     log_info "PHASE 0: DISCOVERY"
+
+    # Chromium writes Current Session/Current Tabs and profile preferences from
+    # onStop(). Force-stopping first loses the newest tabs and settings.
+    graceful_stop_pkg "$SRC"
 
     find_chromium_base "$SRC"
     local src_base="$G_BASE"
@@ -316,8 +319,12 @@ main() {
     src_bn=$(basename "$src_base")
     dst_bn=$(basename "$dst_base")
 
-    if [ ! -f "${dst_base}/Local State" ] && [ -f "${src_base}/Local State" ]; then
-        safe_cp "${src_base}/Local State" "${dst_base}/Local State" "Local State"
+    # Local State is deliberately never copied. It contains target- and
+    # package-scoped state (OS crypt key, variations seed, sign-in metadata)
+    # that Chromium expects to keep in sync with its own package. Keep the
+    # target's file and only patch path references below.
+    if [ ! -f "${dst_base}/Local State" ]; then
+        log_info "Target Local State is absent; the target will create its own on first launch"
     fi
 
     for jf in "${dst_base}/Local State" "${dst_profile}/Preferences" "${dst_profile}/Secure Preferences"; do

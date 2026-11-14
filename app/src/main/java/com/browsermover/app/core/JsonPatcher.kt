@@ -139,6 +139,64 @@ class JsonPatcher(private val context: Context) {
         }
     }
 
+    /**
+     * Chrome on Android stores the signed-in Google account in Android's
+     * AccountManager, not in the profile. Importing the source profile's
+     * sign-in preferences would leave the target pointing at an account that
+     * its own AccountManager cannot resolve. Strip those keys after the copy;
+     * the target can then show the accounts that actually exist on this device.
+     */
+    suspend fun sanitizeChromiumAccountState(prefsPath: String): PatchResult =
+        withContext(Dispatchers.IO) {
+            try {
+                val raw = rootReadFile(prefsPath)
+                    ?: return@withContext PatchResult(false, "Could not read $prefsPath")
+                val json = try { JSONObject(raw) }
+                catch (e: Exception) {
+                    return@withContext PatchResult(false,
+                        "Account-state parse error: ${e.message}")
+                }
+
+                val removed = mutableListOf<String>()
+                for (key in listOf(
+                    "account_info",
+                    "account_id_migration_state",
+                    "account_tracker_service",
+                    "gaia_cookie",
+                    "google",
+                    "signin",
+                    "sync"
+                )) {
+                    if (json.has(key)) {
+                        json.remove(key)
+                        removed.add(key)
+                    }
+                }
+                val profile = json.optJSONObject("profile")
+                if (profile != null) {
+                    for (key in listOf("account_id", "user_name", "gaia_id", "gaia_name")) {
+                        if (profile.has(key)) {
+                            profile.remove(key)
+                            removed.add("profile.$key")
+                        }
+                    }
+                }
+
+                val written = rootWriteFile(prefsPath, json.toString(2))
+                PatchResult(
+                    written,
+                    if (written) {
+                        if (removed.isEmpty()) "No account keys to remove"
+                        else "Account keys cleared: ${removed.joinToString()}"
+                    } else {
+                        "Could not write account-cleaned preferences"
+                    }
+                )
+            } catch (e: Exception) {
+                PatchResult(false, "Account-state cleanup error: ${e.message}")
+            }
+        }
+
     suspend fun patchGeckoExtensionsJson(
         extensionsJsonPath: String,
         srcPkg: String,

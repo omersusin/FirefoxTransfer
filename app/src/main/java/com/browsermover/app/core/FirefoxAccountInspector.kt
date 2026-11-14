@@ -31,11 +31,18 @@ object FirefoxAccountInspector {
         val hasSecure = BrowserPaths.exists(secureA) || BrowserPaths.exists(secureB)
         val secureChannel = packageName.contains("nightly", ignoreCase = true) ||
             packageName.contains("debug", ignoreCase = true)
+        val plainHasState = hasPlain && try {
+            RootHelper.exec(
+                "grep -q 'name=\"fxaState\"' ${BrowserPaths.q(plain)} 2>/dev/null && echo YES || echo NO"
+            ).stdout.contains("YES")
+        } catch (_: Exception) {
+            false
+        }
 
-        if (hasSecure && (!hasPlain || secureChannel)) {
+        if (hasSecure && (!plainHasState || secureChannel)) {
             return FirefoxAccountState(found = true, secureOnly = true)
         }
-        if (!hasPlain) {
+        if (!plainHasState) {
             return FirefoxAccountState()
         }
 

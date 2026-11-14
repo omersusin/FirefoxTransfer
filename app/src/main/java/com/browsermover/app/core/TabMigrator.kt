@@ -34,7 +34,7 @@ internal object TabMigrator {
         val warning: String? = null
     )
 
-    private const val MAX_TABS = 30
+    private const val MAX_TABS = 80
 
     // ------------------------------------------------------------------
     //  Discovery
@@ -47,8 +47,10 @@ internal object TabMigrator {
         val candidates = mutableListOf<String>()
         val sessionsDir = "${profile.profileDir}/Sessions"
         if (BrowserPaths.exists(sessionsDir)) {
+            // Newest first. Chromium keeps both Session_<ts> and
+            // Session_<ts>_<n>; the current session is the newest pair.
             val listed = RootHelper.exec(
-                "ls -1t ${BrowserPaths.q(sessionsDir)} 2>/dev/null | head -5"
+                "ls -1t ${BrowserPaths.q(sessionsDir)} 2>/dev/null | head -8"
             ).outputLines
             for (name in listed) {
                 if (name.isNotBlank()) candidates.add("$sessionsDir/$name")
@@ -139,21 +141,35 @@ internal object TabMigrator {
             "am force-stop ${BrowserPaths.q(pkg)}",
             "sleep 1"
         )
-        for (tab in selected) {
+        selected.forEachIndexed { index, tab ->
+            // -W on the first launch makes sure the target is actually up
+            // before we send the remaining VIEW intents. Without it some
+            // Android builds queue the intents before the activity exists and
+            // silently drop most tabs.
+            val wait = if (index == 0) "-W " else ""
             commands.add(
-                "am start -a android.intent.action.VIEW " +
-                    "-d ${BrowserPaths.q(tab.url)} -p ${BrowserPaths.q(pkg)} " +
-                    ">/dev/null 2>&1; sleep 0.35"
+                "am start ${wait}-a android.intent.action.VIEW " +
+                    "--user current -d ${BrowserPaths.q(tab.url)} -p ${BrowserPaths.q(pkg)} " +
+                    ">/dev/null 2>&1"
             )
+            commands.add("sleep 0.45")
         }
+        commands.add("pidof ${BrowserPaths.q(pkg)} >/dev/null 2>&1 && echo RUNNING || echo STOPPED")
+
         val result = RootHelper.execMultiple(commands)
+        val running = result.stdout.lineSequence().any { it.trim() == "RUNNING" }
         val warning = when {
             !result.success -> "Could not open tabs in $pkg."
+            !running -> "The target browser did not stay running after the tab intents."
             tabs.size > selected.size ->
                 "Opened the first ${selected.size} tabs only (limit $MAX_TABS)."
             else -> null
         }
-        return OpenResult(selected.size, if (result.success) selected.size else 0, warning)
+        return OpenResult(
+            requested = selected.size,
+            opened = if (result.success && running) selected.size else 0,
+            warning = warning
+        )
     }
 
     // ------------------------------------------------------------------

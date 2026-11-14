@@ -132,10 +132,19 @@
         </com.google.android.material.card.MaterialCardView>
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnViewExtensions"
+            android:id="@+id/btnOpenTarget"
             android:layout_width="match_parent"
             android:layout_height="54dp"
             android:layout_marginTop="18dp"
+            android:text="@string/result_open_target"
+            app:icon="@drawable/ic_open_in_new"
+            app:iconGravity="textStart" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnViewExtensions"
+            android:layout_width="match_parent"
+            android:layout_height="54dp"
+            android:layout_marginTop="10dp"
             android:text="@string/result_extensions"
             app:icon="@drawable/ic_extension"
             app:iconGravity="textStart" />

@@ -158,6 +158,21 @@ stop_pkg() {
     log_ok "Stopped: $1"
 }
 
+# Browsers flush their live session and preference stores from onStop().
+# am force-stop kills the process without delivering that callback, which is
+# why a freshly used tab can be missing even though the session file exists.
+# Send the app to the background first, give it time to write, then stop it.
+graceful_stop_pkg() {
+    log_info "Pausing for flush: $1"
+    input keyevent 3 >/dev/null 2>&1 || true
+    am start -a android.intent.action.MAIN -c android.intent.category.HOME \
+        >/dev/null 2>&1 || true
+    sleep 3
+    am force-stop "$1" 2>/dev/null
+    sleep 1
+    log_ok "Stopped after flush: $1"
+}
+
 # ============================================================
 #  DISK SPACE
 # ============================================================
