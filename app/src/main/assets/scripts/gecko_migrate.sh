@@ -76,7 +76,9 @@ gecko_set_pref_bool() {
     local file="$1" key="$2" value="$3"
     [ -f "$file" ] || return 1
     if grep -q "name=\"${key}\"" "$file" 2>/dev/null; then
-        sed -i -E "s#(<boolean name=\"${key}\" value=\")[^\"]*(\" ?/>)#\\1${value}\\2#g" \
+        # Basic sed syntax only: some Android su shells ship an old toybox sed
+        # without -E, and a failed patch would leave the UI showing signed out.
+        sed -i "s#name=\"${key}\" value=\"[^\"]*\"#name=\"${key}\" value=\"${value}\"#" \
             "$file" 2>/dev/null || true
     else
         sed -i "s#</map>#    <boolean name=\"${key}\" value=\"${value}\" />\n</map>#" \

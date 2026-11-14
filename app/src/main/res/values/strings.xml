@@ -42,8 +42,8 @@
     <string name="what_moves">What moves</string>
     <string name="move_bookmarks">Bookmarks &amp; history</string>
     <string name="move_bookmarks_desc">Places, favicons and visit data</string>
-    <string name="move_site_data">Passwords &amp; site data</string>
-    <string name="move_site_data_desc">Cookies, forms and permissions; passwords stay in the source</string>
+    <string name="move_site_data">Website sessions &amp; cookies</string>
+    <string name="move_site_data_desc">Google and other website logins are kept; passwords are not copied</string>
     <string name="move_tabs">Open tabs</string>
     <string name="move_tabs_desc">Reopen the source tab tray</string>
     <string name="move_extensions">Extensions</string>

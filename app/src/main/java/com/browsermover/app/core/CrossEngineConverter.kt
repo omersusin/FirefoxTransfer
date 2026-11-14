@@ -1007,6 +1007,7 @@ internal object CrossEngineConverter {
                         values.put("sameSite", cookie.sameSite)
                         values.put("creationTime", nowMicros)
                         values.put("lastAccessed", nowMicros)
+                        if ("updateTime" in cols) values.put("updateTime", nowMicros)
                         values.put("originAttributes", "")
                         if ("schemeMap" in cols) values.put("schemeMap", 0)
                         if ("rawSameSite" in cols) values.put("rawSameSite", cookie.sameSite)

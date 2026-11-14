@@ -42,8 +42,8 @@
     <string name="choose_browsers">Tarayıcıları seç</string>
     <string name="move_bookmarks">Yer imleri ve geçmiş</string>
     <string name="move_bookmarks_desc">Yerler, simgeler ve ziyaret verileri</string>
-    <string name="move_site_data">Parolalar ve site verileri</string>
-    <string name="move_site_data_desc">Çerezler, formlar ve izinler; parolalar kaynakta kalır</string>
+    <string name="move_site_data">Site oturumları ve çerezler</string>
+    <string name="move_site_data_desc">Google dahil site oturumları korunur; parolalar taşınmaz</string>
     <string name="move_tabs">Açık sekmeler</string>
     <string name="move_tabs_desc">Kaynak sekme çubuğunu yeniden aç</string>
     <string name="move_extensions">Uzantılar</string>
