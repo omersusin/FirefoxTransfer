@@ -904,6 +904,14 @@ internal object CrossEngineConverter {
                 return CookieReadResult(emptyList())
             }
             val cookies = mutableListOf<SourceCookie>()
+            // Firefox switched moz_cookies.expiry from seconds to milliseconds
+            // in schema 16. Reading the version avoids turning every imported
+            // cookie into either a 1970 or a year-57000 cookie.
+            val geckoSchema = try {
+                db.version
+            } catch (_: Exception) {
+                0
+            }
             db.rawQuery("SELECT * FROM moz_cookies", null).use { c ->
                 val hostIdx = c.getColumnIndex("host")
                 val nameIdx = c.getColumnIndex("name")
@@ -923,7 +931,11 @@ internal object CrossEngineConverter {
                             name = name,
                             value = if (valueIdx >= 0) c.getString(valueIdx).orEmpty() else "",
                             path = if (pathIdx >= 0) c.getString(pathIdx) ?: "/" else "/",
-                            expiryEpochSeconds = if (expIdx >= 0) c.getLong(expIdx) else 0L,
+                            expiryEpochSeconds = if (expIdx >= 0) {
+                                geckoCookieExpiryToUnix(c.getLong(expIdx), geckoSchema)
+                            } else {
+                                0L
+                            },
                             secure = secureIdx >= 0 && c.getInt(secureIdx) != 0,
                             httpOnly = httpIdx >= 0 && c.getInt(httpIdx) != 0,
                             sameSite = if (sameIdx >= 0) c.getInt(sameIdx) else 0
@@ -955,6 +967,11 @@ internal object CrossEngineConverter {
             }
             val nowMicros = System.currentTimeMillis() * 1000
             val nowSeconds = System.currentTimeMillis() / 1000
+            val geckoSchema = try {
+                db.version
+            } catch (_: Exception) {
+                0
+            }
             var imported = 0
             var skipped = 0
             db.beginTransaction()
@@ -975,7 +992,16 @@ internal object CrossEngineConverter {
                         values.put("name", cookie.name)
                         values.put("value", cookie.value)
                         values.put("path", cookie.path)
-                        values.put("expiry", cookie.expiryEpochSeconds)
+                        // Chromium reports session cookies with expiry 0.
+                        // Firefox does not persist session cookies from the
+                        // DB, so give those a short persistent window instead
+                        // of writing an instantly-expired row.
+                        val expirySeconds = if (cookie.expiryEpochSeconds > 0) {
+                            cookie.expiryEpochSeconds
+                        } else {
+                            nowSeconds + 30L * 24L * 60L * 60L
+                        }
+                        values.put("expiry", unixToGeckoExpiry(expirySeconds, geckoSchema))
                         values.put("isSecure", if (cookie.secure) 1 else 0)
                         values.put("isHttpOnly", if (cookie.httpOnly) 1 else 0)
                         values.put("sameSite", cookie.sameSite)
@@ -1215,6 +1241,25 @@ internal object CrossEngineConverter {
             hash = (0x9E3779B9L * (rotated xor ch.code.toLong())) and 0xFFFFFFFFL
         }
         return hash
+    }
+
+    /**
+     * Firefox's cookies.sqlite schema 16 stores expiry in milliseconds since
+     * the Unix epoch; older versions stored seconds. A magnitude check keeps
+     * this correct even when user_version was lost or reset.
+     */
+    private fun geckoCookieExpiryToUnix(expiry: Long, schemaVersion: Int): Long {
+        if (expiry <= 0) return 0
+        return if (schemaVersion >= 16 || expiry > 100_000_000_000L) {
+            expiry / 1000L
+        } else {
+            expiry
+        }
+    }
+
+    private fun unixToGeckoExpiry(seconds: Long, schemaVersion: Int): Long {
+        if (seconds <= 0) return 0
+        return if (schemaVersion >= 16) seconds * 1000L else seconds
     }
 
     private fun chromeToUnixMicros(value: Long): Long =
